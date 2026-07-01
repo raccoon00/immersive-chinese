@@ -37,18 +37,18 @@
 	const sizeClasses = $derived(
 		size === 'sm'
 			? {
-					wrapper: 'w-24',
-					frame: 'rounded-2xl p-2',
-					canvas: 'h-20 w-20 rounded-xl',
+					wrapper: 'w-20 sm:w-24',
+					frame: 'rounded-2xl p-1.5 sm:p-2',
+					canvas: 'h-16 w-16 rounded-xl sm:h-20 sm:w-20',
 					strokeWidth: 20,
-					text: 'text-xs'
+					text: 'text-[10px] sm:text-xs'
 				}
 			: {
-					wrapper: 'w-40',
-					frame: 'rounded-3xl p-3',
-					canvas: 'h-36 w-36 rounded-2xl',
-					strokeWidth: 28,
-					text: 'text-sm'
+					wrapper: 'w-32 sm:w-40',
+					frame: 'rounded-3xl p-2 sm:p-3',
+					canvas: 'h-28 w-28 rounded-2xl sm:h-36 sm:w-36',
+					strokeWidth: 24,
+					text: 'text-xs sm:text-sm'
 				}
 	);
 
@@ -87,7 +87,7 @@
 	}
 </script>
 
-<div class={`${sizeClasses.wrapper} shrink-0 space-y-2`}>
+<div class={`${sizeClasses.wrapper} shrink-0 space-y-1.5 sm:space-y-2`}>
 	<div class={`${sizeClasses.frame} bg-white shadow-sm ring-1 ring-zinc-200`}>
 		<svg viewBox="0 0 1024 1024" class={`${sizeClasses.canvas} bg-zinc-50`}>
 			{#if targetCharacter}

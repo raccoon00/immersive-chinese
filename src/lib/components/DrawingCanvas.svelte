@@ -19,6 +19,7 @@
 		onLogEvent: LogEvent;
 		onCharacterChange?: (character: UserCharacterAttempt) => void;
 		targetChar?: string;
+		showTargetBackground?: boolean;
 		targetBackgroundColor?: string;
 		committedStrokeStatuses?: Array<StrokeMatchStatus | undefined>;
 	};
@@ -38,6 +39,7 @@
 		onLogEvent,
 		onCharacterChange = () => {},
 		targetChar,
+		showTargetBackground = true,
 		targetBackgroundColor = '#d4d4d8',
 		committedStrokeStatuses = []
 	}: Props = $props();
@@ -384,11 +386,11 @@
 	});
 </script>
 
-<div class="space-y-4">
+<div class="space-y-3 sm:space-y-4">
 	<div
-		class="relative h-80 w-80 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200"
+		class="relative h-64 w-64 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 sm:h-80 sm:w-80"
 	>
-		{#if targetCharacter}
+		{#if showTargetBackground && targetCharacter}
 			<svg viewBox="0 0 1024 1024" class="pointer-events-none absolute inset-0 h-full w-full">
 				<g transform="translate(0 900) scale(1 -1)">
 					{#each targetCharacter.strokes as stroke (stroke.index)}
@@ -411,22 +413,22 @@
 			onpointermove={handlePointerMove}
 			onpointerup={handlePointerUp}
 			onpointercancel={handlePointerCancel}
-			class="absolute inset-0 block h-80 w-80 touch-none"
+			class="absolute inset-0 block h-64 w-64 touch-none sm:h-80 sm:w-80"
 		></canvas>
 	</div>
 
-	<div class="flex flex-wrap gap-3">
+	<div class="flex flex-wrap gap-2 sm:gap-3">
 		<button
 			type="button"
 			onclick={undoLastStroke}
-			class="rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
+			class="rounded-xl bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200 sm:px-4"
 		>
 			Undo stroke
 		</button>
 		<button
 			type="button"
 			onclick={clearCharacter}
-			class="rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
+			class="rounded-xl bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200 sm:px-4"
 		>
 			Clear current
 		</button>

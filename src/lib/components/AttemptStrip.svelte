@@ -10,7 +10,7 @@
 	let { completedCharacters, activeCharacter }: Props = $props();
 </script>
 
-<div class="flex flex-wrap gap-3">
+<div class="flex flex-wrap gap-2 sm:gap-3">
 	{#each completedCharacters as character, index (character.id)}
 		<MiniCharacterPreview {character} label={`#${index + 1}`} />
 	{/each}

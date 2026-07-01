@@ -15,7 +15,7 @@
 </script>
 
 <div
-	class={`flex h-24 w-24 shrink-0 flex-col items-center justify-center rounded-2xl border bg-white p-2 ${
+	class={`flex h-20 w-20 shrink-0 flex-col items-center justify-center rounded-2xl border bg-white p-1.5 sm:h-24 sm:w-24 sm:p-2 ${
 		active ? 'border-blue-500 ring-2 ring-blue-200' : 'border-zinc-200'
 	}`}
 >
@@ -33,6 +33,6 @@
 	</svg>
 
 	{#if label}
-		<p class="mt-1 text-[11px] text-zinc-500">{label}</p>
+		<p class="mt-1 text-[10px] text-zinc-500 sm:text-[11px]">{label}</p>
 	{/if}
 </div>

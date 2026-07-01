@@ -35,6 +35,7 @@
 	}
 
 	let trainingCharacter = $state<UserCharacterAttempt>(createTrainingCharacter());
+	let showHint = $state(true);
 	const liveResult = $derived(evaluateCharacter(trainingCharacter));
 
 	function strokeStatuses(
@@ -95,21 +96,23 @@
 	});
 </script>
 
-<div class="rounded-2xl bg-white p-5 ring-1 ring-zinc-200">
-	<div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+<div class="rounded-2xl bg-white p-4 ring-1 ring-zinc-200 sm:p-5">
+	<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
 		<div>
 			<p class="text-sm font-medium text-zinc-800">Training</p>
-			<p class="mt-1 text-2xl font-semibold text-zinc-950">
+			<p class="mt-1 text-xl font-semibold text-zinc-950 sm:text-2xl">
 				Character #{characterResult.userCharacterIndex + 1} · {characterResult.targetChar ||
 					'(extra)'}
 			</p>
 			<p class="mt-1 text-sm text-zinc-500">
-				Target stays visible in gray. Your strokes are evaluated after each stroke.
+				{showHint
+					? 'Target stays visible in gray. Your strokes are evaluated after each stroke.'
+					: 'Hint is hidden. Your strokes are still evaluated after each stroke.'}
 			</p>
 		</div>
 
 		{#if liveResult}
-			<div class="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
+			<div class="rounded-xl bg-zinc-100 px-3 py-3 text-xs text-zinc-700 sm:px-4 sm:text-sm">
 				<p class="font-medium text-zinc-900">Live feedback</p>
 				<p class="mt-1">Status: {liveResult.status}</p>
 				<p class="mt-1">Matched: {liveResult.matchedStrokeCount}/{liveResult.targetStrokeCount}</p>
@@ -123,7 +126,19 @@
 	</div>
 
 	{#if targetCharacter && liveResult}
-		<div class="mt-5 grid gap-6 lg:grid-cols-[auto_1fr]">
+		<div class="mt-3 flex flex-wrap gap-2 sm:mt-4 sm:gap-3">
+			<button
+				type="button"
+				onclick={() => {
+					showHint = !showHint;
+				}}
+				class="rounded-xl bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200 sm:px-4"
+			>
+				{showHint ? 'Hide background hint' : 'Show background hint'}
+			</button>
+		</div>
+
+		<div class="mt-3 grid gap-3 lg:grid-cols-[auto_1fr] lg:gap-6">
 			<div class="flex justify-center lg:justify-start">
 				{#key trainingCharacter.id}
 					<DrawingCanvas
@@ -131,6 +146,7 @@
 						initialCharacter={trainingCharacter}
 						characterIndex={characterResult.userCharacterIndex}
 						targetChar={characterResult.targetChar}
+						showTargetBackground={showHint}
 						targetBackgroundColor="#d4d4d8"
 						committedStrokeStatuses={strokeStatuses(liveResult)}
 						onCharacterChange={handleTrainingCharacterChange}
@@ -139,8 +155,10 @@
 				{/key}
 			</div>
 
-			<div class="space-y-3">
-				<div class="rounded-xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600 ring-1 ring-zinc-200">
+			<div class="space-y-2 sm:space-y-3">
+				<div
+					class="rounded-xl bg-zinc-50 px-3 py-3 text-sm text-zinc-600 ring-1 ring-zinc-200 sm:px-4"
+				>
 					<p class="font-medium text-zinc-900">Stroke colors</p>
 					<p class="mt-2"><span class="font-medium text-emerald-600">Green</span> = matched</p>
 					<p class="mt-1"><span class="font-medium text-yellow-500">Yellow</span> = bad shape</p>
@@ -152,10 +170,13 @@
 					</p>
 				</div>
 
-				<div class="rounded-xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600 ring-1 ring-zinc-200">
+				<div
+					class="rounded-xl bg-zinc-50 px-3 py-3 text-sm text-zinc-600 ring-1 ring-zinc-200 sm:px-4"
+				>
 					<p class="font-medium text-zinc-900">Tip</p>
 					<p class="mt-2">
-						Undo or clear to retry. The gray target stays visible while you practice.
+						Undo or clear to retry. You can practice with the gray target visible or hide it for a
+						blank canvas.
 					</p>
 				</div>
 			</div>

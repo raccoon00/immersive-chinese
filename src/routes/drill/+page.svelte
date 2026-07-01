@@ -525,15 +525,17 @@
 </svelte:head>
 
 <div class="min-h-screen bg-zinc-100 text-zinc-950">
-	<div class="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-6 py-10">
-		<header class="space-y-3">
-			<div class="flex flex-wrap items-center justify-between gap-3">
-				<div class="space-y-2">
+	<div
+		class="mx-auto flex min-h-screen max-w-5xl flex-col gap-4 px-4 py-5 sm:gap-6 sm:px-6 sm:py-8 lg:py-10"
+	>
+		<header class="space-y-2 sm:space-y-3">
+			<div class="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+				<div class="space-y-1.5 sm:space-y-2">
 					<p class="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">Hanzi Practice</p>
 					<h1 class="text-3xl font-semibold">Drill session</h1>
 					<p class="text-sm text-zinc-600">Drill ID: {drillId}</p>
 				</div>
-				<div class="flex flex-wrap gap-3 text-sm">
+				<div class="flex flex-wrap gap-2 text-sm sm:gap-3">
 					<a
 						href={`${resolve('/drill-constructor')}?id=${drillId}`}
 						class="rounded-xl bg-white px-4 py-2 font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-50"
@@ -548,11 +550,13 @@
 		</header>
 
 		{#if ready && currentCard}
-			<section class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-zinc-200">
-				<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+			<section class="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:p-6">
+				<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between sm:gap-4">
 					<div>
 						<p class="text-sm text-zinc-500">Prompt</p>
-						<p class="mt-2 text-4xl font-semibold tracking-tight">{currentCard.translation}</p>
+						<p class="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
+							{currentCard.translation}
+						</p>
 						<p class="mt-2 text-sm text-zinc-500">
 							Hanzi and character count remain hidden during the attempt.
 						</p>
@@ -565,10 +569,10 @@
 				</div>
 
 				{#if practiceMode === 'attempting' || practiceMode === 'validating'}
-					<div class="mt-6 space-y-4">
+					<div class="mt-4 space-y-3 sm:mt-6 sm:space-y-4">
 						<AttemptStrip {completedCharacters} activeCharacter={currentCharacter} />
 
-						<div class="grid gap-6 lg:grid-cols-[auto_1fr]">
+						<div class="grid gap-4 lg:grid-cols-[auto_1fr] lg:gap-6">
 							<div class="flex justify-center lg:justify-start">
 								{#key `${attemptId}:${currentCharacter.id}`}
 									<DrawingCanvas
@@ -583,12 +587,12 @@
 								{/key}
 							</div>
 
-							<div class="flex flex-col gap-3">
+							<div class="flex flex-col gap-2 sm:gap-3">
 								<button
 									type="button"
 									onclick={drawNextCharacter}
 									disabled={currentStrokeCount === 0 || practiceMode !== 'attempting'}
-									class="rounded-xl bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
+									class="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300 sm:py-3"
 								>
 									Draw next
 								</button>
@@ -596,7 +600,7 @@
 									type="button"
 									onclick={finishAttempt}
 									disabled={!canFinish || practiceMode !== 'attempting'}
-									class="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+									class="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300 sm:py-3"
 								>
 									{practiceMode === 'validating' ? 'Validating…' : 'Finish'}
 								</button>
@@ -604,16 +608,16 @@
 									type="button"
 									onclick={goToNextCard}
 									disabled={navigationPending || practiceMode === 'validating'}
-									class="rounded-xl bg-zinc-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+									class="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400 sm:py-3"
 								>
 									{navigationPending ? 'Loading…' : 'Skip / next card'}
 								</button>
-								<div class="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-600">
+								<div class="rounded-xl bg-zinc-100 px-3 py-3 text-sm text-zinc-600 sm:px-4">
 									<p class="font-medium text-zinc-800">Current attempt</p>
 									<p class="mt-1 break-all">{attemptId}</p>
 									<p class="mt-3 text-zinc-500">Started: {startedAtClient || 'pending'}</p>
 								</div>
-								<div class="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-600">
+								<div class="rounded-xl bg-zinc-100 px-3 py-3 text-sm text-zinc-600 sm:px-4">
 									<p class="font-medium text-zinc-800">Attempt summary</p>
 									<p class="mt-1 text-zinc-500">
 										Completed characters: {completedCharacters.length}
@@ -626,10 +630,10 @@
 						</div>
 					</div>
 				{:else if practiceMode === 'result' && currentResult}
-					<div class="mt-6 space-y-4">
-						<div class="rounded-2xl bg-emerald-50 p-5 ring-1 ring-emerald-200">
+					<div class="mt-4 space-y-3 sm:mt-6 sm:space-y-4">
+						<div class="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200 sm:p-5">
 							<p class="text-sm font-medium text-emerald-800">Result</p>
-							<p class="mt-2 text-3xl font-semibold text-emerald-950">
+							<p class="mt-2 text-2xl font-semibold text-emerald-950 sm:text-3xl">
 								{currentResult.targetHanzi}
 							</p>
 							<p class="mt-2 text-sm text-emerald-900">{currentResult.message}</p>
@@ -641,7 +645,7 @@
 							</p>
 						</div>
 
-						<div class="flex flex-wrap gap-4">
+						<div class="flex flex-wrap gap-2 sm:gap-4">
 							{#each currentResult.characterResults as characterResult (characterResult.userCharacterIndex)}
 								<button
 									type="button"
@@ -677,14 +681,14 @@
 							{/key}
 						{/if}
 
-						<div class="space-y-3">
+						<div class="space-y-2 sm:space-y-3">
 							<p class="text-sm font-medium text-zinc-800">Stroke order visualization</p>
 							{#each currentResult.characterResults as characterResult (characterResult.userCharacterIndex)}
 								<CharacterStrokeOrderRow {characterResult} />
 							{/each}
 						</div>
 
-						<div class="flex flex-wrap gap-3">
+						<div class="flex flex-wrap gap-2 sm:gap-3">
 							<button
 								type="button"
 								onclick={goToNextCard}
@@ -697,7 +701,7 @@
 				{/if}
 			</section>
 		{:else if ready}
-			<section class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-zinc-200">
+			<section class="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:p-6">
 				<p class="text-lg font-medium text-zinc-900">This drill has no cards yet.</p>
 				<p class="mt-2 text-sm text-zinc-600">
 					Add word–translation pairs in the constructor, then come back here.
@@ -712,13 +716,13 @@
 				</div>
 			</section>
 		{:else}
-			<section class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-zinc-200">
+			<section class="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:p-6">
 				<p class="text-zinc-600">Loading drill…</p>
 			</section>
 		{/if}
 
-		<section class="grid gap-4 md:grid-cols-2">
-			<div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-zinc-200">
+		<section class="grid gap-3 md:grid-cols-2 sm:gap-4">
+			<div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:p-5">
 				<p class="text-sm font-medium text-zinc-800">Logging</p>
 				<p class="mt-2 text-sm text-zinc-600">
 					POST /api/dev-log appends JSONL to <code>logs/dev-current.jsonl</code>.
@@ -734,7 +738,7 @@
 				{/if}
 			</div>
 
-			<div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-zinc-200">
+			<div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:p-5">
 				<p class="text-sm font-medium text-zinc-800">Session</p>
 				<p class="mt-2 break-all text-sm text-zinc-600">{sessionId || 'Starting session…'}</p>
 				<p class="mt-3 break-all text-sm text-zinc-500">Drill: {drillId}</p>
