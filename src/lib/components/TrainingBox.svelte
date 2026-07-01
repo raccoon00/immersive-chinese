@@ -70,6 +70,7 @@
 			missingStrokeCount: nextResult.missingStrokeCount,
 			extraStrokeCount: nextResult.extraStrokeCount,
 			wrongDirectionCount: nextResult.wrongDirectionCount,
+			wrongOrderCount: nextResult.wrongOrderCount,
 			badShapeCount: nextResult.badShapeCount
 		});
 
@@ -113,6 +114,7 @@
 				<p class="mt-1">Matched: {liveResult.matchedStrokeCount}/{liveResult.targetStrokeCount}</p>
 				<p class="mt-1">Bad shape: {liveResult.badShapeCount}</p>
 				<p class="mt-1">Wrong direction: {liveResult.wrongDirectionCount}</p>
+				<p class="mt-1">Wrong order: {liveResult.wrongOrderCount}</p>
 				<p class="mt-1">Missing: {liveResult.missingStrokeCount}</p>
 				<p class="mt-1">Extra: {liveResult.extraStrokeCount}</p>
 			</div>
@@ -144,7 +146,9 @@
 					<p class="mt-1">
 						<span class="font-medium text-purple-500">Purple</span> = wrong direction
 					</p>
-					<p class="mt-1"><span class="font-medium text-red-500">Red</span> = extra</p>
+					<p class="mt-1">
+						<span class="font-medium text-red-500">Red</span> = wrong order or extra
+					</p>
 				</div>
 
 				<div class="rounded-xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600 ring-1 ring-zinc-200">

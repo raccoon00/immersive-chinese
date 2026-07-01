@@ -59,6 +59,7 @@
 				return '#eab308';
 			case 'wrong_direction':
 				return '#a855f7';
+			case 'wrong_order':
 			case 'extra':
 				return '#ef4444';
 			default:
@@ -119,7 +120,10 @@
 				{characterResult.targetChar || '(extra)'} — {characterResult.status}
 			</p>
 			<p>matched {characterResult.matchedStrokeCount}/{characterResult.targetStrokeCount}</p>
-			<p>bad {characterResult.badShapeCount} · wrong dir {characterResult.wrongDirectionCount}</p>
+			<p>
+				bad {characterResult.badShapeCount} · wrong dir {characterResult.wrongDirectionCount} · wrong
+				order {characterResult.wrongOrderCount}
+			</p>
 			<p>missing {characterResult.missingStrokeCount} · extra {characterResult.extraStrokeCount}</p>
 		</div>
 	{/if}

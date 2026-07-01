@@ -3,12 +3,7 @@ import type { Point } from '$lib/drawing/types';
 export type ValidationStage = 'count_only' | 'full';
 export type WordCountStatus = 'same_count' | 'missing_characters' | 'extra_characters';
 export type StrokeMatchStatus =
-	| 'matched'
-	| 'bad_shape'
-	| 'wrong_direction'
-	| 'wrong_order'
-	| 'missing'
-	| 'extra';
+	'matched' | 'bad_shape' | 'wrong_direction' | 'wrong_order' | 'missing' | 'extra';
 
 export type MissedSegment = {
 	from: Point;

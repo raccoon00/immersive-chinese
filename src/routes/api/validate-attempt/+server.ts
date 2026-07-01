@@ -92,6 +92,7 @@ async function logValidationDetails(
 					missingStrokeCount: characterResult.missingStrokeCount,
 					extraStrokeCount: characterResult.extraStrokeCount,
 					wrongDirectionCount: characterResult.wrongDirectionCount,
+					wrongOrderCount: characterResult.wrongOrderCount,
 					badShapeCount: characterResult.badShapeCount
 				}
 			})
@@ -167,6 +168,7 @@ async function logStrokeResult(
 				lengthPenalty: strokeResult.lengthPenalty,
 				totalScore: strokeResult.score,
 				status: strokeResult.status,
+				wrongOrderTargetStrokeIndex: strokeResult.wrongOrderTargetStrokeIndex,
 				missedSegmentCount: strokeResult.missedSegments?.length ?? 0,
 				missedSegments: strokeResult.missedSegments ?? []
 			}
@@ -265,7 +267,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
 					index: characterResult.userCharacterIndex,
 					targetChar: characterResult.targetChar,
 					status: characterResult.status,
-					score: characterResult.totalScore
+					score: characterResult.totalScore,
+					wrongOrderCount: characterResult.wrongOrderCount
 				})),
 				message: result.message
 			}

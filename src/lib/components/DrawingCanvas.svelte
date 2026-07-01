@@ -129,6 +129,7 @@
 				return '#eab308';
 			case 'wrong_direction':
 				return '#a855f7';
+			case 'wrong_order':
 			case 'extra':
 				return '#ef4444';
 			default:
@@ -395,6 +396,13 @@
 				</g>
 			</svg>
 		{/if}
+
+		<div
+			class="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-zinc-300"
+		></div>
+		<div
+			class="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-zinc-300"
+		></div>
 
 		<canvas
 			bind:this={canvas}
