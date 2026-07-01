@@ -9,6 +9,7 @@
 	import TrainingBox from '$lib/components/TrainingBox.svelte';
 	import { sendDevLog } from '$lib/client/devLog';
 	import { createAttemptId, getOrCreateSessionId } from '$lib/client/ids';
+	import { isSpeechSynthesisSupported, speakChinese } from '$lib/client/speakText';
 	import { validateAttempt } from '$lib/client/validateAttempt';
 	import { DATA_VERSION } from '$lib/config/app';
 	import type { StoredDrill } from '$lib/drills/types';
@@ -63,6 +64,8 @@
 	let lastSubmittedAttempt = $state<WordAttempt | null>(null);
 	let currentResult = $state<WordValidationResult | null>(null);
 	let selectedTrainingCharacterIndex = $state(0);
+	let ttsAvailable = $state(false);
+	let ttsSpeaking = $state(false);
 
 	const currentCard = $derived(queue[currentIndex] ?? null);
 	const remainingCards = $derived(Math.max(0, queue.length - currentIndex - 1));
@@ -378,6 +381,37 @@
 		}
 	}
 
+	async function speakCurrentResult(): Promise<void> {
+		if (!currentResult || !ttsAvailable || ttsSpeaking) {
+			return;
+		}
+
+		ttsSpeaking = true;
+
+		await logEvent('tts_play_pressed', {
+			attemptId,
+			drillId,
+			cardId: currentCard?.id,
+			text: currentResult.targetHanzi,
+			language: 'zh-CN'
+		});
+
+		try {
+			await speakChinese(currentResult.targetHanzi);
+		} catch (error) {
+			lastLogError = error instanceof Error ? error.message : 'TTS failed';
+			void logEvent('client_error_reported', {
+				message: error instanceof Error ? error.message : 'TTS failed',
+				component: 'drill/+page.svelte:speakCurrentResult',
+				attemptId,
+				drillId,
+				cardId: currentCard?.id
+			});
+		} finally {
+			ttsSpeaking = false;
+		}
+	}
+
 	async function goToNextCard(): Promise<void> {
 		if (!currentCard || navigationPending || practiceMode === 'validating') {
 			return;
@@ -463,6 +497,7 @@
 
 	onMount(() => {
 		sessionId = getOrCreateSessionId();
+		ttsAvailable = isSpeechSynthesisSupported();
 		ready = true;
 
 		const reportClientError = (event: ErrorEvent) => {
@@ -495,6 +530,7 @@
 		return () => {
 			window.removeEventListener('error', reportClientError);
 			window.removeEventListener('unhandledrejection', reportUnhandledRejection);
+			window.speechSynthesis?.cancel();
 
 			if (sessionId && currentCard && attemptId && practiceMode === 'attempting') {
 				void sendDevLog({
@@ -633,9 +669,19 @@
 					<div class="mt-4 space-y-3 sm:mt-6 sm:space-y-4">
 						<div class="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200 sm:p-5">
 							<p class="text-sm font-medium text-emerald-800">Result</p>
-							<p class="mt-2 text-2xl font-semibold text-emerald-950 sm:text-3xl">
-								{currentResult.targetHanzi}
-							</p>
+							<div class="mt-2 flex flex-wrap items-center gap-2 sm:gap-3">
+								<p class="text-2xl font-semibold text-emerald-950 sm:text-3xl">
+									{currentResult.targetHanzi}
+								</p>
+								<button
+									type="button"
+									onclick={() => void speakCurrentResult()}
+									disabled={!ttsAvailable || ttsSpeaking}
+									class="rounded-xl bg-white px-3 py-2 text-sm font-medium text-emerald-900 ring-1 ring-emerald-300 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+								>
+									{ttsSpeaking ? 'Playing…' : '▶ Play'}
+								</button>
+							</div>
 							<p class="mt-2 text-sm text-emerald-900">{currentResult.message}</p>
 							<p class="mt-3 text-sm text-emerald-900">
 								Status: {currentResult.status} · Validation stage: {currentResult.validationStage}
