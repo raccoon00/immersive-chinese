@@ -3,7 +3,7 @@
 	import { getBoundingBox, polylineLength } from '$lib/drawing/geometry';
 	import { processStroke } from '$lib/drawing/strokeProcessing';
 	import type { Point } from '$lib/drawing/types';
-	import { getTargetCharacter } from '$lib/hanzi/loadHanziData';
+	import { getHanziStrokeDataContext } from '$lib/hanzi/context';
 	import type { UserCharacterAttempt, UserStroke } from '$lib/practice/types';
 	import type { StrokeMatchStatus } from '$lib/validation/types';
 
@@ -42,7 +42,8 @@
 		committedStrokeStatuses = []
 	}: Props = $props();
 
-	const targetCharacter = $derived(targetChar ? getTargetCharacter(targetChar) : undefined);
+	const hanziStrokeData = getHanziStrokeDataContext();
+	const targetCharacter = $derived(targetChar ? hanziStrokeData[targetChar] : undefined);
 
 	let canvas = $state<HTMLCanvasElement | null>(null);
 	let character = $state<UserCharacterAttempt>({ id: 'active-character', strokes: [] });

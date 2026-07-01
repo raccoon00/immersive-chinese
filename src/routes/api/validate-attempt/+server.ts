@@ -1,8 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { cards } from '$lib/data/cards';
 import type { ValidateAttemptRequest } from '$lib/logging/types';
 import { appendDevLog, createBaseLogEvent } from '$lib/server/devLog';
+import { loadTargetCharacters } from '$lib/server/hanziData';
 import { thresholds } from '$lib/scoring/thresholds';
 import { validateWordAttempt } from '$lib/validation/validateWordAttempt';
 import type { CharacterValidationResult, StrokeValidationResult } from '$lib/validation/types';
@@ -18,6 +18,8 @@ function isValidateAttemptRequest(value: unknown): value is ValidateAttemptReque
 		typeof candidate.sessionId === 'string' &&
 		typeof candidate.attemptId === 'string' &&
 		typeof candidate.cardId === 'string' &&
+		candidate.card !== null &&
+		typeof candidate.card === 'object' &&
 		candidate.attempt !== null &&
 		typeof candidate.attempt === 'object'
 	);
@@ -183,25 +185,9 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		return json({ error: 'Invalid validate-attempt request body' }, { status: 400 });
 	}
 
-	const card = cards.find((item) => item.id === body.cardId);
-	if (!card) {
-		await appendDevLog(
-			createBaseLogEvent(request, {
-				event: 'server_error',
-				sessionId: body.sessionId,
-				attemptId: body.attemptId,
-				cardId: body.cardId,
-				clientTs: body.clientTs,
-				route: body.route ?? url.pathname,
-				payload: {
-					route: url.pathname,
-					message: `Card not found: ${body.cardId}`
-				}
-			})
-		);
-
-		return json({ error: 'Card not found' }, { status: 404 });
-	}
+	const card = body.card;
+	const targetChars = Array.from(card.hanzi);
+	const hanziStrokeData = await loadTargetCharacters(targetChars);
 
 	await appendDevLog(
 		createBaseLogEvent(request, {
@@ -213,17 +199,18 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			route: body.route ?? url.pathname,
 			payload: {
 				attemptId: body.attemptId,
+				drillId: body.drillId,
 				cardId: body.cardId,
 				targetHanzi: card.hanzi,
-				targetChars: Array.from(card.hanzi),
-				targetCharacterCount: Array.from(card.hanzi).length,
+				targetChars,
+				targetCharacterCount: targetChars.length,
 				userCharacterCount: body.attempt.characters.length,
 				thresholds
 			}
 		})
 	);
 
-	const result = validateWordAttempt(card, body.attempt, thresholds);
+	const result = validateWordAttempt(card, body.attempt, thresholds, hanziStrokeData);
 
 	await appendDevLog(
 		createBaseLogEvent(request, {

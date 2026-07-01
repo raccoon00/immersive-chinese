@@ -1,6 +1,6 @@
 <script lang="ts">
 	import CharacterStrokeOrderPreview from '$lib/components/CharacterStrokeOrderPreview.svelte';
-	import { getTargetCharacter } from '$lib/hanzi/loadHanziData';
+	import { getHanziStrokeDataContext } from '$lib/hanzi/context';
 	import type { CharacterValidationResult } from '$lib/validation/types';
 
 	type Props = {
@@ -9,8 +9,9 @@
 
 	let { characterResult }: Props = $props();
 
+	const hanziStrokeData = getHanziStrokeDataContext();
 	const targetCharacter = $derived(
-		characterResult.targetChar ? getTargetCharacter(characterResult.targetChar) : undefined
+		characterResult.targetChar ? hanziStrokeData[characterResult.targetChar] : undefined
 	);
 	const visibleStrokeCount = $derived(targetCharacter?.strokes.length ?? 0);
 </script>

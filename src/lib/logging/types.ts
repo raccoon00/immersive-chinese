@@ -13,7 +13,7 @@ export type BaseLogEvent = {
 	payload: unknown;
 };
 
-import type { WordAttempt } from '$lib/practice/types';
+import type { WordAttempt, WordCard } from '$lib/practice/types';
 
 export type ClientLogRequest = {
 	event: string;
@@ -29,6 +29,8 @@ export type ValidateAttemptRequest = {
 	sessionId: string;
 	attemptId: string;
 	cardId: string;
+	card: WordCard;
+	drillId?: string;
 	attempt: WordAttempt;
 	clientTs?: string;
 	route?: string;

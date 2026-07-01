@@ -1,4 +1,5 @@
 import { getTargetCharacter } from '$lib/hanzi/loadHanziData';
+import type { HanziStrokeDataMap } from '$lib/hanzi/context';
 import type { WordAttempt, WordCard } from '$lib/practice/types';
 import {
 	compareCharacter,
@@ -45,7 +46,8 @@ function summarizeWordStatus(
 export function validateWordAttempt(
 	card: WordCard,
 	attempt: WordAttempt,
-	customThresholds: Thresholds = thresholds
+	customThresholds: Thresholds = thresholds,
+	hanziStrokeData?: HanziStrokeDataMap
 ): WordValidationResult {
 	const targetChars = Array.from(card.hanzi);
 	const targetCharacterCount = targetChars.length;
@@ -63,7 +65,7 @@ export function validateWordAttempt(
 		}
 
 		if (targetChar && !userCharacter) {
-			const targetCharacter = getTargetCharacter(targetChar);
+			const targetCharacter = getTargetCharacter(targetChar, hanziStrokeData);
 			if (targetCharacter) {
 				characterResults.push(markMissingCharacter(index, targetCharacter, customThresholds));
 			}
@@ -71,7 +73,7 @@ export function validateWordAttempt(
 		}
 
 		if (targetChar && userCharacter) {
-			const targetCharacter = getTargetCharacter(targetChar);
+			const targetCharacter = getTargetCharacter(targetChar, hanziStrokeData);
 
 			if (!targetCharacter) {
 				return {

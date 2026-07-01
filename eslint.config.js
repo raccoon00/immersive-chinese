@@ -34,6 +34,12 @@ export default defineConfig(
 		}
 	},
 	{
+		files: ['src/routes/drill/+page.svelte', 'src/routes/drill-constructor/+page.svelte'],
+		rules: {
+			'svelte/no-navigation-without-resolve': 'off'
+		}
+	},
+	{
 		// Override or add rule settings here, such as:
 		// 'svelte/button-has-type': 'error'
 		rules: {}

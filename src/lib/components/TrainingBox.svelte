@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import DrawingCanvas from '$lib/components/DrawingCanvas.svelte';
-	import { getTargetCharacter } from '$lib/hanzi/loadHanziData';
+	import { getHanziStrokeDataContext } from '$lib/hanzi/context';
 	import type { UserCharacterAttempt } from '$lib/practice/types';
 	import { compareCharacter } from '$lib/scoring/compareCharacter';
 	import type { CharacterValidationResult, StrokeMatchStatus } from '$lib/validation/types';
@@ -16,8 +16,9 @@
 
 	let { attemptId, characterResult, onLogEvent }: Props = $props();
 
+	const hanziStrokeData = getHanziStrokeDataContext();
 	const targetCharacter = $derived(
-		characterResult.targetChar ? getTargetCharacter(characterResult.targetChar) : undefined
+		characterResult.targetChar ? hanziStrokeData[characterResult.targetChar] : undefined
 	);
 
 	function createTrainingCharacter(): UserCharacterAttempt {

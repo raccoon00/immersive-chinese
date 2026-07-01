@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getTargetCharacter } from '$lib/hanzi/loadHanziData';
+	import { getHanziStrokeDataContext } from '$lib/hanzi/context';
 
 	type Props = {
 		targetChar: string;
@@ -9,7 +9,8 @@
 
 	let { targetChar, visibleStrokeCount, label }: Props = $props();
 
-	const targetCharacter = $derived(targetChar ? getTargetCharacter(targetChar) : undefined);
+	const hanziStrokeData = getHanziStrokeDataContext();
+	const targetCharacter = $derived(targetChar ? hanziStrokeData[targetChar] : undefined);
 	const visibleStrokes = $derived(targetCharacter?.strokes.slice(0, visibleStrokeCount) ?? []);
 </script>
 

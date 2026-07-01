@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getTargetCharacter } from '$lib/hanzi/loadHanziData';
+	import { getHanziStrokeDataContext } from '$lib/hanzi/context';
 	import type { UserCharacterAttempt } from '$lib/practice/types';
 	import type {
 		CharacterValidationResult,
@@ -25,8 +25,9 @@
 		label
 	}: Props = $props();
 
+	const hanziStrokeData = getHanziStrokeDataContext();
 	const targetCharacter = $derived(
-		characterResult.targetChar ? getTargetCharacter(characterResult.targetChar) : undefined
+		characterResult.targetChar ? hanziStrokeData[characterResult.targetChar] : undefined
 	);
 	const visibleUserStrokes = $derived(
 		userCharacter
