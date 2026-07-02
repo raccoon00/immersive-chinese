@@ -48,9 +48,11 @@ if [[ -z "$CLOUDFLARE_HOST_NAME" ]]; then
 fi
 
 export CLOUDFLARE_HOST_NAME
+CLOUDFLARE_TUNNEL_URL="https://$CLOUDFLARE_HOST_NAME"
 
 echo
 
+echo "Cloudflare URL: $CLOUDFLARE_TUNNEL_URL"
 echo "CLOUDFLARE_HOST_NAME=$CLOUDFLARE_HOST_NAME"
 echo "Starting Vite with allowed host..."
 echo
