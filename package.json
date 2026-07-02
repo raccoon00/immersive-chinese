@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
+		"dev:cloudflare": "bash scripts/dev-cloudflare.sh",
 		"build": "vite build",
 		"preview": "vite preview",
 		"build:hanzi-data": "tsx scripts/build-hanzi-data.ts",
