@@ -53,6 +53,15 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 					) as Record<string, string>)
 				: undefined;
 
+		const tokenSelections =
+			updates.tokenSelections && typeof updates.tokenSelections === 'object'
+				? (Object.fromEntries(
+						Object.entries(updates.tokenSelections as Record<string, unknown>).filter(
+							([, value]) => typeof value === 'string'
+						)
+					) as Record<string, string>)
+				: undefined;
+
 		const studyText = await saveStudyText(studyTextId, {
 			title: typeof updates.title === 'string' ? updates.title : undefined,
 			rawText: typeof updates.rawText === 'string' ? updates.rawText : undefined,
@@ -69,7 +78,8 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 				? updates.selectedSentenceIds.filter((value): value is string => typeof value === 'string')
 				: undefined,
 			sentenceTranslations,
-			sentenceSegmentations
+			sentenceSegmentations,
+			tokenSelections
 		});
 
 		return json({ studyText });

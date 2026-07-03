@@ -23,6 +23,7 @@ type SaveStudyTextUpdates = Partial<
 > & {
 	sentenceTranslations?: Record<string, string>;
 	sentenceSegmentations?: Record<string, string>;
+	tokenSelections?: Record<string, string>;
 };
 
 function getStudyTextPath(studyTextId: string): string {
@@ -49,16 +50,31 @@ export function createStudyTextId(): string {
 	return `study_${Math.random().toString(36).slice(2, 18)}`;
 }
 
-function summarizeStudyText(studyText: StudyText): StudyTextSummary {
+function selectAllSentences(studyText: StudyText): StudyText {
+	const selectedSentenceIds = studyText.sentences.map((sentence) => sentence.id);
+
 	return {
-		id: studyText.id,
-		title: studyText.title,
-		status: studyText.status,
-		relatedDrillId: studyText.relatedDrillId,
-		createdAt: studyText.createdAt,
-		updatedAt: studyText.updatedAt,
-		sentenceCount: studyText.sentences.length,
-		selectedSentenceCount: studyText.selectedSentenceIds.length
+		...studyText,
+		selectedSentenceIds,
+		sentences: studyText.sentences.map((sentence) => ({
+			...sentence,
+			selected: true
+		}))
+	};
+}
+
+function summarizeStudyText(studyText: StudyText): StudyTextSummary {
+	const normalizedStudyText = selectAllSentences(studyText);
+
+	return {
+		id: normalizedStudyText.id,
+		title: normalizedStudyText.title,
+		status: normalizedStudyText.status,
+		relatedDrillId: normalizedStudyText.relatedDrillId,
+		createdAt: normalizedStudyText.createdAt,
+		updatedAt: normalizedStudyText.updatedAt,
+		sentenceCount: normalizedStudyText.sentences.length,
+		selectedSentenceCount: normalizedStudyText.selectedSentenceIds.length
 	};
 }
 
@@ -87,10 +103,16 @@ async function enrichToken(token: StudyToken): Promise<StudyToken> {
 	}
 
 	const dictionaryMatches = await lookupDictionaryMatches(token.text);
+	const selectedDictionaryMatch = token.selectedDictionaryEntryId
+		? dictionaryMatches.find((match) => match.entryId === token.selectedDictionaryEntryId)
+		: undefined;
+
 	return {
 		...token,
 		dictionaryMatches,
-		pinyin: token.pinyin ?? dictionaryMatches[0]?.pinyin,
+		pinyin: token.pinyin ?? selectedDictionaryMatch?.pinyin ?? dictionaryMatches[0]?.pinyin,
+		selectedTranslation:
+			token.selectedTranslation ?? selectedDictionaryMatch?.definitions.join('; '),
 		tags: [...new Set(dictionaryMatches.flatMap((match) => match.tags ?? []))]
 	};
 }
@@ -141,6 +163,39 @@ function applySentenceSegmentations(
 				typeof sentenceSegmentations[sentence.id] === 'string'
 					? manualSegmentSentence(sentence.id, sentence.text, sentenceSegmentations[sentence.id])
 					: sentence.segmentation
+		}))
+	};
+}
+
+function applyTokenSelections(
+	studyText: StudyText,
+	tokenSelections: Record<string, string> | undefined
+): StudyText {
+	if (!tokenSelections) {
+		return studyText;
+	}
+
+	return {
+		...studyText,
+		sentences: studyText.sentences.map((sentence) => ({
+			...sentence,
+			segmentation: {
+				...sentence.segmentation,
+				tokens: sentence.segmentation.tokens.map((token) => {
+					const selectedDictionaryEntryId = tokenSelections[token.id];
+					const selectedDictionaryMatch = selectedDictionaryEntryId
+						? token.dictionaryMatches.find((match) => match.entryId === selectedDictionaryEntryId)
+						: undefined;
+
+					return typeof selectedDictionaryEntryId === 'string'
+						? {
+								...token,
+								selectedDictionaryEntryId,
+								selectedTranslation: selectedDictionaryMatch?.definitions.join('; ')
+							}
+						: token;
+				})
+			}
 		}))
 	};
 }
@@ -208,7 +263,7 @@ async function readStoredStudyText(studyTextId: string): Promise<StudyText | nul
 
 	try {
 		const contents = await readFile(getStudyTextPath(studyTextId), 'utf8');
-		return JSON.parse(contents) as StudyText;
+		return selectAllSentences(JSON.parse(contents) as StudyText);
 	} catch {
 		return null;
 	}
@@ -248,34 +303,6 @@ export async function createStudyTextFromRawText(input: RawStudyTextInput): Prom
 	return studyText;
 }
 
-function preserveSelection(
-	nextStudyText: StudyText,
-	previousStudyText: StudyText,
-	selectedSentenceIds: string[] | undefined
-): StudyText {
-	const selectedGlobalIndexes = new Set(
-		(selectedSentenceIds ?? previousStudyText.selectedSentenceIds)
-			.map((sentenceId) =>
-				previousStudyText.sentences.find((sentence) => sentence.id === sentenceId)
-			)
-			.filter((sentence): sentence is StudyText['sentences'][number] => Boolean(sentence))
-			.map((sentence) => sentence.globalIndex)
-	);
-
-	const nextSelectedSentenceIds = nextStudyText.sentences
-		.filter((sentence) => selectedGlobalIndexes.has(sentence.globalIndex))
-		.map((sentence) => sentence.id);
-
-	return {
-		...nextStudyText,
-		selectedSentenceIds: nextSelectedSentenceIds,
-		sentences: nextStudyText.sentences.map((sentence) => ({
-			...sentence,
-			selected: nextSelectedSentenceIds.includes(sentence.id)
-		}))
-	};
-}
-
 export async function saveStudyText(
 	studyTextId: string,
 	updates: SaveStudyTextUpdates
@@ -298,27 +325,16 @@ export async function saveStudyText(
 			title: updates.title ?? existing.title,
 			createdFrom: 'manual'
 		});
-		nextStudyText = preserveSelection(nextStudyText, existing, updates.selectedSentenceIds);
 		nextStudyText.createdAt = existing.createdAt;
 		nextStudyText.relatedDrillId = updates.relatedDrillId ?? existing.relatedDrillId;
 		nextStudyText.status = updates.status ?? existing.status;
 	} else {
-		const selectedSentenceIds =
-			updates.selectedSentenceIds?.filter((sentenceId) =>
-				existing.sentences.some((sentence) => sentence.id === sentenceId)
-			) ?? existing.selectedSentenceIds;
-
-		nextStudyText = {
+		nextStudyText = selectAllSentences({
 			...existing,
 			title: updates.title?.trim() || existing.title,
 			relatedDrillId: updates.relatedDrillId ?? existing.relatedDrillId,
-			status: updates.status ?? existing.status,
-			selectedSentenceIds,
-			sentences: existing.sentences.map((sentence) => ({
-				...sentence,
-				selected: selectedSentenceIds.includes(sentence.id)
-			}))
-		};
+			status: updates.status ?? existing.status
+		});
 	}
 
 	const nextWholeTranslation = updates.wholeTranslation ?? existing.wholeTranslation;
@@ -334,6 +350,7 @@ export async function saveStudyText(
 	}
 
 	nextStudyText = applySentenceSegmentations(nextStudyText, updates.sentenceSegmentations);
+	nextStudyText = applyTokenSelections(nextStudyText, updates.tokenSelections);
 	nextStudyText = applySentenceTranslations(nextStudyText, updates.sentenceTranslations);
 
 	if (nextStudyText.title.trim().length === 0) {

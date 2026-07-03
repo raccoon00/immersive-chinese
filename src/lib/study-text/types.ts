@@ -32,6 +32,7 @@ export type StudyToken = {
 	autoProposed: boolean;
 	manuallyEdited: boolean;
 	pinyin?: string;
+	selectedDictionaryEntryId?: string;
 	selectedTranslation?: string;
 	manualTranslation?: string;
 	dictionaryMatches: DictionaryMatch[];
