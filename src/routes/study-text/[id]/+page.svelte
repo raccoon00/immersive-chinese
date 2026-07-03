@@ -2,6 +2,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { serializeSentenceSegmentation } from '$lib/study-text/segmentSentence';
 	import type {
 		StudySentence,
 		StudyText,
@@ -26,6 +27,7 @@
 	let wholeTranslation = $state('');
 	let selectedSentenceIds = $state<string[]>([]);
 	let sentenceTranslations = $state<Record<string, string>>({});
+	let sentenceSegmentationDrafts = $state<Record<string, string>>({});
 	let translationWarnings = $state<string[]>([]);
 	let editingText = $state(false);
 	let rawTextDraft = $state('');
@@ -44,6 +46,12 @@
 		selectedSentenceIds = [...studyText.selectedSentenceIds];
 		sentenceTranslations = Object.fromEntries(
 			studyText.sentences.map((sentence) => [sentence.id, sentence.translation ?? ''])
+		);
+		sentenceSegmentationDrafts = Object.fromEntries(
+			studyText.sentences.map((sentence) => [
+				sentence.id,
+				serializeSentenceSegmentation(sentence.segmentation.tokens)
+			])
 		);
 		translationWarnings = [];
 		rawTextDraft = studyText.rawText;
@@ -87,6 +95,13 @@
 		sentenceTranslations = {
 			...sentenceTranslations,
 			[sentenceId]: translation
+		};
+	}
+
+	function setSentenceSegmentationDraft(sentenceId: string, segmentation: string): void {
+		sentenceSegmentationDrafts = {
+			...sentenceSegmentationDrafts,
+			[sentenceId]: segmentation
 		};
 	}
 
@@ -184,6 +199,22 @@
 		}
 	}
 
+	async function applySentenceSegmentation(sentenceId: string): Promise<void> {
+		await saveStudyText(
+			{
+				title,
+				wholeTranslation,
+				selectedSentenceIds,
+				sentenceTranslations,
+				sentenceSegmentations: {
+					[sentenceId]: sentenceSegmentationDrafts[sentenceId] ?? ''
+				},
+				status: 'in_progress'
+			},
+			'Token split updated.'
+		);
+	}
+
 	async function saveProgress(): Promise<void> {
 		await saveStudyText(
 			{
@@ -191,6 +222,7 @@
 				wholeTranslation,
 				selectedSentenceIds,
 				sentenceTranslations,
+				sentenceSegmentations: sentenceSegmentationDrafts,
 				status: 'in_progress'
 			},
 			'Progress saved.'
@@ -551,6 +583,33 @@
 												</span>
 											{/each}
 										</div>
+									</div>
+
+									<div class="mt-3 rounded-2xl bg-white p-3 ring-1 ring-zinc-200">
+										<div class="flex flex-wrap items-center justify-between gap-2">
+											<p class="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
+												Manual token splits
+											</p>
+											<button
+												type="button"
+												onclick={() => void applySentenceSegmentation(sentence.id)}
+												disabled={savePending}
+												class="rounded-xl bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+											>
+												Apply splits
+											</button>
+										</div>
+										<p class="mt-2 text-xs text-zinc-500">
+											Use <span class="font-semibold">|</span> between tokens, for example:
+											<span class="font-medium text-zinc-700"> 你 | 好 | ！</span>
+										</p>
+										<textarea
+											value={sentenceSegmentationDrafts[sentence.id] ?? ''}
+											oninput={(event) =>
+												setSentenceSegmentationDraft(sentence.id, event.currentTarget.value)}
+											rows="3"
+											class="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
+										></textarea>
 									</div>
 
 									<textarea

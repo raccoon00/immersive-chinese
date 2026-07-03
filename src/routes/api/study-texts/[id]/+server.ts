@@ -37,11 +37,20 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 	try {
 		const sentenceTranslations =
 			updates.sentenceTranslations && typeof updates.sentenceTranslations === 'object'
-				? Object.fromEntries(
+				? (Object.fromEntries(
 						Object.entries(updates.sentenceTranslations as Record<string, unknown>).filter(
 							([, value]) => typeof value === 'string'
 						)
-				  ) as Record<string, string>
+					) as Record<string, string>)
+				: undefined;
+
+		const sentenceSegmentations =
+			updates.sentenceSegmentations && typeof updates.sentenceSegmentations === 'object'
+				? (Object.fromEntries(
+						Object.entries(updates.sentenceSegmentations as Record<string, unknown>).filter(
+							([, value]) => typeof value === 'string'
+						)
+					) as Record<string, string>)
 				: undefined;
 
 		const studyText = await saveStudyText(studyTextId, {
@@ -59,7 +68,8 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 			selectedSentenceIds: Array.isArray(updates.selectedSentenceIds)
 				? updates.selectedSentenceIds.filter((value): value is string => typeof value === 'string')
 				: undefined,
-			sentenceTranslations
+			sentenceTranslations,
+			sentenceSegmentations
 		});
 
 		return json({ studyText });

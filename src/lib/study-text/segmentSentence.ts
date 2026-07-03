@@ -20,7 +20,11 @@ function createToken(
 	text: string,
 	start: number,
 	end: number,
-	isWordLike: boolean | undefined
+	isWordLike: boolean | undefined,
+	options?: {
+		autoProposed?: boolean;
+		manuallyEdited?: boolean;
+	}
 ): StudyToken {
 	return {
 		id: `${sentenceId}_${start}_${end}`,
@@ -29,10 +33,53 @@ function createToken(
 		end,
 		text,
 		kind: inferTokenKind(text, isWordLike),
-		autoProposed: true,
-		manuallyEdited: false,
+		autoProposed: options?.autoProposed ?? true,
+		manuallyEdited: options?.manuallyEdited ?? false,
 		dictionaryMatches: [],
 		tags: []
+	};
+}
+
+export function serializeSentenceSegmentation(tokens: StudyToken[]): string {
+	return tokens.map((token) => token.text).join(' | ');
+}
+
+export function manualSegmentSentence(
+	sentenceId: string,
+	sentenceText: string,
+	segmentationText: string
+): SentenceSegmentation {
+	const parts = segmentationText
+		.split('|')
+		.map((part) => part.trim())
+		.filter((part) => part.length > 0);
+
+	if (parts.length === 0) {
+		throw new Error('Manual segmentation cannot be empty.');
+	}
+
+	if (parts.join('') !== sentenceText) {
+		throw new Error(
+			'Manual segmentation must exactly match the sentence text when separators are removed.'
+		);
+	}
+
+	let cursor = 0;
+	const tokens = parts.map((part) => {
+		const start = cursor;
+		const end = start + part.length;
+		cursor = end;
+		return createToken(sentenceId, part, start, end, !punctuationPattern.test(part), {
+			autoProposed: false,
+			manuallyEdited: true
+		});
+	});
+
+	return {
+		sentenceId,
+		source: 'manual',
+		tokens,
+		updatedAt: new Date().toISOString()
 	};
 }
 

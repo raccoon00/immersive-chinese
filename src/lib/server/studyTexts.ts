@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { buildStudyTextStructure, parseStudyText } from '$lib/study-text/parseStudyText';
 import { mapWholeTranslationToStudyText } from '$lib/study-text/parseTranslation';
-import { autoSegmentSentence } from '$lib/study-text/segmentSentence';
+import { autoSegmentSentence, manualSegmentSentence } from '$lib/study-text/segmentSentence';
 import type {
 	RawStudyTextInput,
 	StudyText,
@@ -22,6 +22,7 @@ type SaveStudyTextUpdates = Partial<
 	>
 > & {
 	sentenceTranslations?: Record<string, string>;
+	sentenceSegmentations?: Record<string, string>;
 };
 
 function getStudyTextPath(studyTextId: string): string {
@@ -121,6 +122,26 @@ async function enrichSentenceSegmentation(studyText: StudyText): Promise<StudyTe
 	return {
 		...studyText,
 		sentences
+	};
+}
+
+function applySentenceSegmentations(
+	studyText: StudyText,
+	sentenceSegmentations: Record<string, string> | undefined
+): StudyText {
+	if (!sentenceSegmentations) {
+		return studyText;
+	}
+
+	return {
+		...studyText,
+		sentences: studyText.sentences.map((sentence) => ({
+			...sentence,
+			segmentation:
+				typeof sentenceSegmentations[sentence.id] === 'string'
+					? manualSegmentSentence(sentence.id, sentence.text, sentenceSegmentations[sentence.id])
+					: sentence.segmentation
+		}))
 	};
 }
 
@@ -312,6 +333,7 @@ export async function saveStudyText(
 		}
 	}
 
+	nextStudyText = applySentenceSegmentations(nextStudyText, updates.sentenceSegmentations);
 	nextStudyText = applySentenceTranslations(nextStudyText, updates.sentenceTranslations);
 
 	if (nextStudyText.title.trim().length === 0) {
