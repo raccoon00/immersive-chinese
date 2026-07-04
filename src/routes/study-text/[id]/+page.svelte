@@ -1,6 +1,7 @@
 <!-- eslint-disable svelte/no-navigation-without-resolve -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { splitTranslationIntoSentences } from '$lib/study-text/parseTranslation';
 	import { serializeSentenceSegmentation } from '$lib/study-text/segmentSentence';
 	import type {
 		DictionaryMatch,
@@ -26,12 +27,18 @@
 
 	let title = $state('');
 	let wholeTranslation = $state('');
+	const parsedWholeTranslationSentences = $derived(splitTranslationIntoSentences(wholeTranslation));
 	let sentenceTranslations = $state<Record<string, string>>({});
 	let sentenceSegmentationDrafts = $state<Record<string, string>>({});
 	let selectedTokenEntryIds = $state<Record<string, string>>({});
+	let separateWords = $state(false);
+	let selectionMode = $state<'word' | 'sentence'>('word');
 	let activeTokenId = $state<string | null>(null);
+	let activeSentenceId = $state<string | null>(null);
 	let selectionJustMadeTokenId = $state<string | null>(null);
 	let changingTokenId = $state<string | null>(null);
+	let sentenceTranslationEditorId = $state<string | null>(null);
+	let sentenceSegmentationEditorId = $state<string | null>(null);
 	let translationWarnings = $state<string[]>([]);
 	let editingText = $state(false);
 	let rawTextDraft = $state('');
@@ -66,8 +73,11 @@
 				.map((token) => [token.id, token.selectedDictionaryEntryId ?? ''])
 		);
 		activeTokenId = null;
+		activeSentenceId = null;
 		selectionJustMadeTokenId = null;
 		changingTokenId = null;
+		sentenceTranslationEditorId = null;
+		sentenceSegmentationEditorId = null;
 		rawTextDraft = studyText.rawText;
 		editingText = false;
 		if (studyIdChanged) {
@@ -81,6 +91,16 @@
 
 	function sentenceForParagraph(sentenceId: string): StudySentence | undefined {
 		return sentencesById[sentenceId];
+	}
+
+	function setSelectionMode(mode: 'word' | 'sentence'): void {
+		selectionMode = mode;
+		activeTokenId = null;
+		activeSentenceId = null;
+		selectionJustMadeTokenId = null;
+		changingTokenId = null;
+		sentenceTranslationEditorId = null;
+		sentenceSegmentationEditorId = null;
 	}
 
 	function startEditingText(): void {
@@ -201,19 +221,21 @@
 		}
 	}
 
-	async function applySentenceSegmentation(sentenceId: string): Promise<void> {
+	async function applySentenceChanges(sentenceId: string): Promise<void> {
 		await saveStudyText(
 			{
 				title,
 				wholeTranslation,
-				sentenceTranslations,
+				sentenceTranslations: {
+					[sentenceId]: sentenceTranslations[sentenceId] ?? ''
+				},
 				sentenceSegmentations: {
 					[sentenceId]: sentenceSegmentationDrafts[sentenceId] ?? ''
 				},
 				tokenSelections: selectedTokenEntryIds,
 				status: 'in_progress'
 			},
-			'Token split updated.'
+			'Sentence changes saved.'
 		);
 	}
 
@@ -239,11 +261,15 @@
 	}
 
 	function showTokenPopup(tokenId: string): void {
+		if (selectionMode !== 'word') {
+			return;
+		}
+
 		activeTokenId = tokenId;
 	}
 
 	function hideTokenPopup(tokenId: string): void {
-		if (activeTokenId !== tokenId) {
+		if (selectionMode !== 'word' || activeTokenId !== tokenId) {
 			return;
 		}
 
@@ -291,13 +317,71 @@
 		return !selectedMatchForToken(token);
 	}
 
+	function activateSentence(sentenceId: string): void {
+		if (selectionMode !== 'sentence') {
+			return;
+		}
+
+		activeSentenceId = sentenceId;
+		activeTokenId = null;
+	}
+
+	function hideSentence(sentenceId: string): void {
+		if (selectionMode !== 'sentence' || activeSentenceId !== sentenceId) {
+			return;
+		}
+
+		activeSentenceId = null;
+		sentenceTranslationEditorId = null;
+		sentenceSegmentationEditorId = null;
+	}
+
+	function handleSentenceFocusOut(
+		sentenceId: string,
+		event: FocusEvent & { currentTarget: EventTarget & HTMLElement }
+	): void {
+		const nextTarget = event.relatedTarget;
+		if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+			return;
+		}
+
+		hideSentence(sentenceId);
+	}
+
+	function toggleSentenceTranslationEditor(sentenceId: string): void {
+		sentenceTranslationEditorId = sentenceTranslationEditorId === sentenceId ? null : sentenceId;
+	}
+
+	function toggleSentenceSegmentationEditor(sentenceId: string): void {
+		sentenceSegmentationEditorId = sentenceSegmentationEditorId === sentenceId ? null : sentenceId;
+	}
+
+	function currentSentenceTranslation(sentence: StudySentence): string {
+		return (sentenceTranslations[sentence.id] ?? sentence.translation ?? '').trim();
+	}
+
+	function sentenceTranslationCandidates(sentence: StudySentence): string[] {
+		const current = currentSentenceTranslation(sentence);
+		return [
+			...new Set([current, ...parsedWholeTranslationSentences].filter((value) => value.length > 0))
+		];
+	}
+
 	function tokenTextClassName(token: StudyToken): string {
 		if (token.kind === 'punctuation') {
 			return 'text-zinc-500';
 		}
 
+		if (selectionMode === 'sentence') {
+			return 'text-zinc-950';
+		}
+
 		if (token.dictionaryMatches.length === 0) {
 			return 'text-amber-900 underline decoration-amber-300 decoration-dotted underline-offset-4';
+		}
+
+		if (selectedMatchForToken(token)) {
+			return 'text-emerald-900 underline decoration-emerald-300 decoration-dotted underline-offset-4';
 		}
 
 		return 'text-sky-900 underline decoration-sky-300 decoration-dotted underline-offset-4';
@@ -317,7 +401,7 @@
 	<title>{studyText.title} · Study Text</title>
 	<meta
 		name="description"
-		content="Parse text, edit sentence segmentation, and attach translations."
+		content="Read Chinese text, choose word meanings, and manage sentence translations."
 	/>
 </svelte:head>
 
@@ -339,6 +423,13 @@
 					>
 						Back to studies
 					</a>
+					<button
+						type="button"
+						onclick={startEditingText}
+						class="rounded-xl bg-white px-4 py-2 font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-50"
+					>
+						Edit source text
+					</button>
 					{#if studyText.relatedDrillId}
 						<a
 							href={`${resolve('/drill')}?id=${studyText.relatedDrillId}`}
@@ -350,41 +441,14 @@
 				</div>
 			</div>
 			<p class="text-sm text-zinc-600">
-				All sentences are included. Edit segmentation directly on each sentence and hover words in
-				the sentence itself for dictionary details.
+				Read the Chinese text first, then switch between word meanings and sentence-level
+				translation work.
 			</p>
 		</header>
 
-		<section class="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+		{#if editingText}
 			<section class="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:p-6">
-				<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-					<div>
-						<p class="text-lg font-semibold text-zinc-950">Source text</p>
-						<p class="text-sm text-zinc-500">
-							Edit the text, then finish editing to split paragraphs and sentences again.
-						</p>
-					</div>
-					<div class="flex flex-wrap gap-3">
-						<button
-							type="button"
-							onclick={() => openGoogleTranslate(studyText.rawText)}
-							class="rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
-						>
-							Open in Google Translate
-						</button>
-						{#if !editingText}
-							<button
-								type="button"
-								onclick={startEditingText}
-								class="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800"
-							>
-								Edit text
-							</button>
-						{/if}
-					</div>
-				</div>
-
-				<div class="mt-5 space-y-3">
+				<div class="space-y-3">
 					<label class="space-y-2">
 						<span class="text-sm font-medium text-zinc-800">Title</span>
 						<input
@@ -393,345 +457,388 @@
 							class="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
 						/>
 					</label>
-
-					{#if editingText}
-						<textarea
-							bind:value={rawTextDraft}
-							rows="12"
-							class="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
-						></textarea>
-						<div class="flex flex-wrap gap-3">
-							<button
-								type="button"
-								onclick={() => void finishEditingText()}
-								disabled={savePending}
-								class="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
-							>
-								{savePending ? 'Saving…' : 'Finish editing text'}
-							</button>
-							<button
-								type="button"
-								onclick={cancelEditingText}
-								class="rounded-xl bg-zinc-100 px-4 py-3 text-sm font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
-							>
-								Cancel editing
-							</button>
-						</div>
-					{:else}
-						<div
-							class="rounded-2xl bg-zinc-50 p-4 text-sm leading-7 text-zinc-800 ring-1 ring-zinc-200"
+					<textarea
+						bind:value={rawTextDraft}
+						rows="12"
+						class="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
+					></textarea>
+					<div class="flex flex-wrap gap-3">
+						<button
+							type="button"
+							onclick={() => void finishEditingText()}
+							disabled={savePending}
+							class="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
 						>
-							{#each studyText.rawText.split('\n') as line, index (index)}
-								{#if line.trim().length === 0}
-									<div class="h-4"></div>
-								{:else}
-									<p>{line}</p>
-								{/if}
-							{/each}
-						</div>
-					{/if}
+							{savePending ? 'Saving…' : 'Finish editing text'}
+						</button>
+						<button
+							type="button"
+							onclick={cancelEditingText}
+							class="rounded-xl bg-zinc-100 px-4 py-3 text-sm font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
+						>
+							Cancel editing
+						</button>
+					</div>
 				</div>
 			</section>
-
-			<section class="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:p-6">
-				<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-					<div>
-						<p class="text-lg font-semibold text-zinc-950">Whole-text translation</p>
-						<p class="text-sm text-zinc-500">
-							Paste or edit a full translation here. It will map to all sentences.
-						</p>
-					</div>
-					<button
-						type="button"
-						onclick={() => openGoogleTranslate(studyText.rawText)}
-						class="rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
-					>
-						Open source in Google Translate
-					</button>
-				</div>
-
-				<textarea
-					bind:value={wholeTranslation}
-					rows="10"
-					placeholder="Paste the full translation here"
-					class="mt-5 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
-				></textarea>
-
-				<div class="mt-4 flex flex-wrap gap-3">
-					<button
-						type="button"
-						onclick={() => void mapWholeTranslation()}
-						disabled={savePending || wholeTranslation.trim().length === 0}
-						class="rounded-xl bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
-					>
-						{savePending ? 'Mapping…' : 'Map translation to sentences'}
-					</button>
-				</div>
-
-				{#if translationWarnings.length > 0}
-					<div
-						class="mt-4 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900 ring-1 ring-amber-200"
-					>
-						<p class="font-medium">Translation mapping warnings</p>
-						<ul class="mt-2 list-disc space-y-1 pl-5">
-							{#each translationWarnings as warning, index (index)}
-								<li>{warning}</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-			</section>
-		</section>
+		{/if}
 
 		<section class="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:p-6">
-			<div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+			<div
+				class="flex flex-col gap-4 border-b border-zinc-200 pb-4 sm:flex-row sm:items-center sm:justify-between"
+			>
 				<div>
-					<p class="text-lg font-semibold text-zinc-950">Sentences</p>
-					<p class="text-sm text-zinc-500">
-						Segmentation is shown directly in each sentence with spaces between tokens. Hover or
-						focus a word to inspect dictionary entries.
-					</p>
+					<p class="text-lg font-semibold text-zinc-950">Chinese text</p>
+					<p class="text-sm text-zinc-500">Hover words to work either per word or per sentence.</p>
 				</div>
-				<p class="text-sm text-zinc-500">
-					{sentences.length} sentence{sentences.length === 1 ? '' : 's'}
-				</p>
+				<div class="flex flex-wrap items-center gap-3 text-sm">
+					<button
+						type="button"
+						onclick={() => (separateWords = !separateWords)}
+						class={`rounded-xl px-4 py-2 font-medium ring-1 transition ${separateWords ? 'bg-zinc-950 text-white ring-zinc-950 hover:bg-zinc-800' : 'bg-white text-zinc-800 ring-zinc-200 hover:bg-zinc-50'}`}
+					>
+						{separateWords ? 'Separate words: On' : 'Separate words: Off'}
+					</button>
+					<div class="inline-flex rounded-xl bg-zinc-100 p-1 ring-1 ring-zinc-200">
+						<button
+							type="button"
+							onclick={() => setSelectionMode('word')}
+							class={`rounded-lg px-3 py-1.5 font-medium transition ${selectionMode === 'word' ? 'bg-white text-zinc-950 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-600 hover:text-zinc-900'}`}
+						>
+							Per word
+						</button>
+						<button
+							type="button"
+							onclick={() => setSelectionMode('sentence')}
+							class={`rounded-lg px-3 py-1.5 font-medium transition ${selectionMode === 'sentence' ? 'bg-white text-zinc-950 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-600 hover:text-zinc-900'}`}
+						>
+							Per sentence
+						</button>
+					</div>
+				</div>
 			</div>
 
-			<div class="mt-5 space-y-4">
+			<div class="mt-5 space-y-6">
 				{#each paragraphs as paragraph (paragraph.id)}
-					<div class="rounded-2xl bg-zinc-50 p-4 ring-1 ring-zinc-200">
-						<p class="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
-							Paragraph {paragraph.index + 1}
-						</p>
-						<div class="mt-3 space-y-3">
-							{#each paragraph.sentenceIds as sentenceId (sentenceId)}
-								{@const sentence = sentenceForParagraph(sentenceId)}
-								{#if sentence}
-									<div class="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
-										<div class="flex flex-wrap items-center justify-between gap-2">
-											<p class="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
-												Sentence #{sentence.globalIndex + 1}
-											</p>
-											<button
-												type="button"
-												onclick={() => openGoogleTranslate(sentence.text)}
-												class="rounded-xl bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-700 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
-											>
-												Google Translate
-											</button>
-										</div>
-
-										<div class="mt-3 rounded-2xl bg-zinc-50 p-4 ring-1 ring-zinc-200">
-											<div class="text-lg leading-8 text-zinc-900">
-												{#each sentence.segmentation.tokens as token, index (token.id)}
-													{#if index > 0}<span aria-hidden="true"> </span>{/if}
-													<span
-														role="group"
-														class="relative inline"
-														onmouseenter={() => showTokenPopup(token.id)}
-														onmouseleave={() => hideTokenPopup(token.id)}
-														onfocusout={(event) => handleTokenFocusOut(token.id, event)}
+					<div class="space-y-3 rounded-2xl bg-zinc-50 p-4 ring-1 ring-zinc-200">
+						{#each paragraph.sentenceIds as sentenceId (sentenceId)}
+							{@const sentence = sentenceForParagraph(sentenceId)}
+							{#if sentence}
+								<div
+									role="group"
+									class={`rounded-xl px-2 py-1 transition ${selectionMode === 'sentence' && activeSentenceId === sentence.id ? 'bg-white ring-1 ring-zinc-200' : ''}`}
+									onmouseenter={() => activateSentence(sentence.id)}
+									onmouseleave={() => hideSentence(sentence.id)}
+									onfocusin={() => activateSentence(sentence.id)}
+									onfocusout={(event) => handleSentenceFocusOut(sentence.id, event)}
+								>
+									<div class="text-2xl leading-10 text-zinc-950 sm:text-3xl sm:leading-[3.25rem]">
+										{#each sentence.segmentation.tokens as token, index (token.id)}
+											{#if separateWords && index > 0}<span aria-hidden="true"> </span>{/if}
+											{#if selectionMode === 'word'}
+												<span
+													role="group"
+													class="relative inline"
+													onmouseenter={() => showTokenPopup(token.id)}
+													onmouseleave={() => hideTokenPopup(token.id)}
+													onfocusout={(event) => handleTokenFocusOut(token.id, event)}
+												>
+													<button
+														type="button"
+														onfocus={() => showTokenPopup(token.id)}
+														class={`inline rounded-sm px-0.5 py-0.5 align-baseline transition hover:bg-white focus-visible:bg-white ${tokenTextClassName(token)}`}
 													>
-														<button
-															type="button"
-															onfocus={() => showTokenPopup(token.id)}
-															class={`inline rounded-sm px-0.5 py-0.5 align-baseline transition hover:bg-white focus-visible:bg-white ${tokenTextClassName(token)}`}
-														>
-															{token.text}
-														</button>
+														{token.text}
+													</button>
 
-														{#if token.kind === 'word' && activeTokenId === token.id}
-															<div class="absolute left-0 top-full z-20 w-80 max-w-[85vw] pt-2">
-																<div
-																	class="rounded-2xl bg-zinc-950 p-3 text-left text-xs text-white shadow-lg ring-1 ring-zinc-800"
-																>
-																	<div class="flex items-center justify-between gap-2">
-																		<p class="text-sm font-semibold text-white">{token.text}</p>
-																		{#if token.pinyin}
-																			<p class="text-[11px] text-zinc-300">{token.pinyin}</p>
-																		{/if}
-																	</div>
-
-																	{#if token.dictionaryMatches.length === 0}
-																		<p class="mt-2 text-zinc-300">No dictionary match found.</p>
-																	{:else if showFullMatchList(token)}
-																		<div class="mt-2 space-y-2">
-																			{#each token.dictionaryMatches as match (match.entryId)}
-																				<button
-																					type="button"
-																					onclick={() => chooseTokenMatch(token, match)}
-																					class={`block w-full rounded-xl p-2 text-left ring-1 transition hover:bg-white/10 ${selectedMatchForToken(token)?.entryId === match.entryId ? 'bg-sky-500/15 ring-sky-300/40' : 'bg-white/5 ring-white/10'}`}
-																				>
-																					<div class="flex items-start justify-between gap-2">
-																						<div>
-																							<p class="font-medium text-white">
-																								{match.simplified}
-																								{#if match.traditional !== match.simplified}
-																									<span class="text-zinc-300">
-																										· {match.traditional}</span
-																									>
-																								{/if}
-																							</p>
-																							{#if match.pinyin}
-																								<p class="mt-0.5 text-zinc-300">{match.pinyin}</p>
-																							{/if}
-																						</div>
-																						<p
-																							class="shrink-0 text-[10px] uppercase tracking-[0.14em] text-zinc-400"
-																						>
-																							{match.source}
-																						</p>
-																					</div>
-
-																					{#if typeof match.frequency === 'number' || (match.partsOfSpeech?.length ?? 0) > 0}
-																						<p class="mt-1 text-zinc-300">
-																							{#if typeof match.frequency === 'number'}freq {match.frequency}{/if}{#if typeof match.frequency === 'number' && (match.partsOfSpeech?.length ?? 0) > 0}
-																								·
-																							{/if}{#if (match.partsOfSpeech?.length ?? 0) > 0}POS {match.partsOfSpeech?.join(
-																									', '
-																								)}{/if}
-																						</p>
-																					{/if}
-																					{#if (match.tags?.length ?? 0) > 0 || (match.classifiers?.length ?? 0) > 0}
-																						<p class="mt-1 text-zinc-300">
-																							{#if (match.tags?.length ?? 0) > 0}{match.tags?.join(
-																									', '
-																								)}{/if}{#if (match.tags?.length ?? 0) > 0 && (match.classifiers?.length ?? 0) > 0}
-																								·
-																							{/if}{#if (match.classifiers?.length ?? 0) > 0}CL {match.classifiers?.join(
-																									', '
-																								)}{/if}
-																						</p>
-																					{/if}
-
-																					<ul class="mt-2 list-disc space-y-1 pl-4 text-zinc-200">
-																						{#each match.definitions as definition, definitionIndex (definitionIndex)}
-																							<li>{definition}</li>
-																						{/each}
-																					</ul>
-																				</button>
-																			{/each}
-																		</div>
-																	{:else}
-																		{@const selectedMatch = selectedMatchForToken(token)}
-																		{#if selectedMatch}
-																			<div class="mt-2 space-y-3">
-																				<div
-																					class="rounded-xl bg-sky-500/15 p-2 ring-1 ring-sky-300/40"
-																				>
-																					<div class="flex items-start justify-between gap-2">
-																						<div>
-																							<p class="font-medium text-white">
-																								{selectedMatch.simplified}
-																								{#if selectedMatch.traditional !== selectedMatch.simplified}
-																									<span class="text-zinc-300">
-																										· {selectedMatch.traditional}</span
-																									>
-																								{/if}
-																							</p>
-																							{#if selectedMatch.pinyin}
-																								<p class="mt-0.5 text-zinc-300">
-																									{selectedMatch.pinyin}
-																								</p>
-																							{/if}
-																						</div>
-																						<p
-																							class="shrink-0 text-[10px] uppercase tracking-[0.14em] text-zinc-400"
-																						>
-																							{selectedMatch.source}
-																						</p>
-																					</div>
-
-																					{#if typeof selectedMatch.frequency === 'number' || (selectedMatch.partsOfSpeech?.length ?? 0) > 0}
-																						<p class="mt-1 text-zinc-300">
-																							{#if typeof selectedMatch.frequency === 'number'}freq {selectedMatch.frequency}{/if}{#if typeof selectedMatch.frequency === 'number' && (selectedMatch.partsOfSpeech?.length ?? 0) > 0}
-																								·
-																							{/if}{#if (selectedMatch.partsOfSpeech?.length ?? 0) > 0}POS
-																								{selectedMatch.partsOfSpeech?.join(', ')}{/if}
-																						</p>
-																					{/if}
-																					{#if (selectedMatch.tags?.length ?? 0) > 0 || (selectedMatch.classifiers?.length ?? 0) > 0}
-																						<p class="mt-1 text-zinc-300">
-																							{#if (selectedMatch.tags?.length ?? 0) > 0}{selectedMatch.tags?.join(
-																									', '
-																								)}{/if}{#if (selectedMatch.tags?.length ?? 0) > 0 && (selectedMatch.classifiers?.length ?? 0) > 0}
-																								·
-																							{/if}{#if (selectedMatch.classifiers?.length ?? 0) > 0}CL
-																								{selectedMatch.classifiers?.join(', ')}{/if}
-																						</p>
-																					{/if}
-
-																					<ul class="mt-2 list-disc space-y-1 pl-4 text-zinc-200">
-																						{#each selectedMatch.definitions as definition, definitionIndex (definitionIndex)}
-																							<li>{definition}</li>
-																						{/each}
-																					</ul>
-																				</div>
-
-																				<button
-																					type="button"
-																					onclick={() => changeTokenSelection(token.id)}
-																					class="rounded-xl bg-white/10 px-3 py-2 text-xs font-medium text-white ring-1 ring-white/15 transition hover:bg-white/20"
-																				>
-																					Change
-																				</button>
-																			</div>
-																		{/if}
+													{#if token.kind === 'word' && activeTokenId === token.id}
+														<div class="absolute left-0 top-full z-20 w-80 max-w-[85vw] pt-2">
+															<div
+																class="rounded-2xl bg-zinc-950 p-3 text-left text-xs text-white shadow-lg ring-1 ring-zinc-800"
+															>
+																<div class="flex items-center justify-between gap-2">
+																	<p class="text-sm font-semibold text-white">{token.text}</p>
+																	{#if token.pinyin}
+																		<p class="text-[11px] text-zinc-300">{token.pinyin}</p>
 																	{/if}
 																</div>
-															</div>
-														{/if}
-													</span>
-												{/each}
-											</div>
-										</div>
 
-										<div class="mt-3 rounded-2xl bg-zinc-50 p-3 ring-1 ring-zinc-200">
-											<div class="flex flex-wrap items-center justify-between gap-2">
-												<p class="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
-													Manual token splits
-												</p>
+																{#if token.dictionaryMatches.length === 0}
+																	<p class="mt-2 text-zinc-300">No dictionary match found.</p>
+																{:else if showFullMatchList(token)}
+																	<div class="mt-2 max-h-96 space-y-2 overflow-y-auto pr-1">
+																		{#each token.dictionaryMatches as match (match.entryId)}
+																			<button
+																				type="button"
+																				onclick={() => chooseTokenMatch(token, match)}
+																				class={`block w-full rounded-xl p-2 text-left ring-1 transition hover:bg-white/10 ${selectedMatchForToken(token)?.entryId === match.entryId ? 'bg-sky-500/15 ring-sky-300/40' : 'bg-white/5 ring-white/10'}`}
+																			>
+																				<div class="flex items-start justify-between gap-2">
+																					<div>
+																						<p class="font-medium text-white">
+																							{match.simplified}
+																							{#if match.traditional !== match.simplified}
+																								<span class="text-zinc-300">
+																									· {match.traditional}</span
+																								>
+																							{/if}
+																						</p>
+																						{#if match.pinyin}
+																							<p class="mt-0.5 text-zinc-300">{match.pinyin}</p>
+																						{/if}
+																					</div>
+																					<p
+																						class="shrink-0 text-[10px] uppercase tracking-[0.14em] text-zinc-400"
+																					>
+																						{match.source}
+																					</p>
+																				</div>
+
+																				{#if typeof match.frequency === 'number' || (match.partsOfSpeech?.length ?? 0) > 0}
+																					<p class="mt-1 text-zinc-300">
+																						{#if typeof match.frequency === 'number'}freq {match.frequency}{/if}{#if typeof match.frequency === 'number' && (match.partsOfSpeech?.length ?? 0) > 0}
+																							·
+																						{/if}{#if (match.partsOfSpeech?.length ?? 0) > 0}POS {match.partsOfSpeech?.join(
+																								', '
+																							)}{/if}
+																					</p>
+																				{/if}
+																				{#if (match.tags?.length ?? 0) > 0 || (match.classifiers?.length ?? 0) > 0}
+																					<p class="mt-1 text-zinc-300">
+																						{#if (match.tags?.length ?? 0) > 0}{match.tags?.join(
+																								', '
+																							)}{/if}{#if (match.tags?.length ?? 0) > 0 && (match.classifiers?.length ?? 0) > 0}
+																							·
+																						{/if}{#if (match.classifiers?.length ?? 0) > 0}CL {match.classifiers?.join(
+																								', '
+																							)}{/if}
+																					</p>
+																				{/if}
+																				<ul class="mt-2 list-disc space-y-1 pl-4 text-zinc-200">
+																					{#each match.definitions as definition, definitionIndex (definitionIndex)}
+																						<li>{definition}</li>
+																					{/each}
+																				</ul>
+																			</button>
+																		{/each}
+																	</div>
+																{:else}
+																	{@const selectedMatch = selectedMatchForToken(token)}
+																	{#if selectedMatch}
+																		<div class="mt-2 space-y-3">
+																			<div
+																				class="rounded-xl bg-sky-500/15 p-2 ring-1 ring-sky-300/40"
+																			>
+																				<div class="flex items-start justify-between gap-2">
+																					<div>
+																						<p class="font-medium text-white">
+																							{selectedMatch.simplified}
+																							{#if selectedMatch.traditional !== selectedMatch.simplified}
+																								<span class="text-zinc-300">
+																									· {selectedMatch.traditional}</span
+																								>
+																							{/if}
+																						</p>
+																						{#if selectedMatch.pinyin}
+																							<p class="mt-0.5 text-zinc-300">
+																								{selectedMatch.pinyin}
+																							</p>
+																						{/if}
+																					</div>
+																					<p
+																						class="shrink-0 text-[10px] uppercase tracking-[0.14em] text-zinc-400"
+																					>
+																						{selectedMatch.source}
+																					</p>
+																				</div>
+																				{#if typeof selectedMatch.frequency === 'number' || (selectedMatch.partsOfSpeech?.length ?? 0) > 0}
+																					<p class="mt-1 text-zinc-300">
+																						{#if typeof selectedMatch.frequency === 'number'}freq {selectedMatch.frequency}{/if}{#if typeof selectedMatch.frequency === 'number' && (selectedMatch.partsOfSpeech?.length ?? 0) > 0}
+																							·
+																						{/if}{#if (selectedMatch.partsOfSpeech?.length ?? 0) > 0}POS
+																							{selectedMatch.partsOfSpeech?.join(', ')}{/if}
+																					</p>
+																				{/if}
+																				{#if (selectedMatch.tags?.length ?? 0) > 0 || (selectedMatch.classifiers?.length ?? 0) > 0}
+																					<p class="mt-1 text-zinc-300">
+																						{#if (selectedMatch.tags?.length ?? 0) > 0}{selectedMatch.tags?.join(
+																								', '
+																							)}{/if}{#if (selectedMatch.tags?.length ?? 0) > 0 && (selectedMatch.classifiers?.length ?? 0) > 0}
+																							·
+																						{/if}{#if (selectedMatch.classifiers?.length ?? 0) > 0}CL
+																							{selectedMatch.classifiers?.join(', ')}{/if}
+																					</p>
+																				{/if}
+																				<ul class="mt-2 list-disc space-y-1 pl-4 text-zinc-200">
+																					{#each selectedMatch.definitions as definition, definitionIndex (definitionIndex)}
+																						<li>{definition}</li>
+																					{/each}
+																				</ul>
+																			</div>
+																			<button
+																				type="button"
+																				onclick={() => changeTokenSelection(token.id)}
+																				class="rounded-xl bg-white/10 px-3 py-2 text-xs font-medium text-white ring-1 ring-white/15 transition hover:bg-white/20"
+																			>
+																				Change
+																			</button>
+																		</div>
+																	{/if}
+																{/if}
+															</div>
+														</div>
+													{/if}
+												</span>
+											{:else}
 												<button
 													type="button"
-													onclick={() => void applySentenceSegmentation(sentence.id)}
-													disabled={savePending}
-													class="rounded-xl bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+													onfocus={() => activateSentence(sentence.id)}
+													class={`inline rounded-sm px-0.5 py-0.5 align-baseline transition hover:bg-white focus-visible:bg-white ${tokenTextClassName(token)}`}
 												>
-													Apply splits
+													{token.text}
 												</button>
-											</div>
-											<p class="mt-2 text-xs text-zinc-500">
-												Use <span class="font-semibold">|</span> between tokens, for example:
-												<span class="font-medium text-zinc-700"> 你 | 好 | ！</span>
-											</p>
-											<textarea
-												value={sentenceSegmentationDrafts[sentence.id] ?? ''}
-												oninput={(event) =>
-													setSentenceSegmentationDraft(sentence.id, event.currentTarget.value)}
-												rows="3"
-												class="mt-2 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
-											></textarea>
-										</div>
-
-										<textarea
-											value={sentenceTranslations[sentence.id] ?? ''}
-											oninput={(event) =>
-												setSentenceTranslation(sentence.id, event.currentTarget.value)}
-											rows="3"
-											placeholder="Sentence translation"
-											class="mt-3 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
-										></textarea>
+											{/if}
+										{/each}
 									</div>
-								{/if}
-							{/each}
-						</div>
+
+									{#if selectionMode === 'sentence' && activeSentenceId === sentence.id}
+										<div class="mt-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200">
+											<div class="flex flex-wrap items-start justify-between gap-3">
+												<div>
+													<p class="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
+														Sentence translation
+													</p>
+													<p class="mt-2 text-sm leading-6 text-zinc-900">
+														{currentSentenceTranslation(sentence) || 'No sentence translation yet.'}
+													</p>
+												</div>
+												<div class="flex flex-wrap gap-2">
+													<button
+														type="button"
+														onclick={() => toggleSentenceTranslationEditor(sentence.id)}
+														class="rounded-xl bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
+													>
+														Change translation
+													</button>
+													<button
+														type="button"
+														onclick={() => toggleSentenceSegmentationEditor(sentence.id)}
+														class="rounded-xl bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
+													>
+														Change word separation
+													</button>
+													<button
+														type="button"
+														onclick={() => void applySentenceChanges(sentence.id)}
+														disabled={savePending}
+														class="rounded-xl bg-zinc-950 px-3 py-2 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+													>
+														{savePending ? 'Saving…' : 'Apply sentence changes'}
+													</button>
+												</div>
+											</div>
+
+											{#if sentenceTranslationEditorId === sentence.id}
+												<div class="mt-4 space-y-3 rounded-2xl bg-zinc-50 p-3 ring-1 ring-zinc-200">
+													<p class="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
+														Choose sentence translation
+													</p>
+													{#if sentenceTranslationCandidates(sentence).length === 0}
+														<p class="text-sm text-zinc-500">
+															No parsed sentence translations yet.
+														</p>
+													{:else}
+														<div class="space-y-2">
+															{#each sentenceTranslationCandidates(sentence) as candidate, index (candidate + index)}
+																<button
+																	type="button"
+																	onclick={() => setSentenceTranslation(sentence.id, candidate)}
+																	class={`block w-full rounded-xl px-3 py-2 text-left text-sm ring-1 transition ${currentSentenceTranslation(sentence) === candidate ? 'bg-sky-50 text-sky-950 ring-sky-200' : 'bg-white text-zinc-800 ring-zinc-200 hover:bg-zinc-50'}`}
+																>
+																	{candidate}
+																</button>
+															{/each}
+														</div>
+													{/if}
+
+													<label class="block space-y-2">
+														<span
+															class="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500"
+														>
+															Manual translation
+														</span>
+														<textarea
+															value={sentenceTranslations[sentence.id] ?? ''}
+															oninput={(event) =>
+																setSentenceTranslation(sentence.id, event.currentTarget.value)}
+															rows="3"
+															class="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
+														></textarea>
+													</label>
+												</div>
+											{/if}
+
+											{#if sentenceSegmentationEditorId === sentence.id}
+												<div class="mt-4 rounded-2xl bg-zinc-50 p-3 ring-1 ring-zinc-200">
+													<p class="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
+														Word separation
+													</p>
+													<p class="mt-2 text-xs text-zinc-500">
+														Use <span class="font-semibold">|</span> between tokens, for example:
+														<span class="font-medium text-zinc-700"> 你 | 好 | ！</span>
+													</p>
+													<textarea
+														value={sentenceSegmentationDrafts[sentence.id] ?? ''}
+														oninput={(event) =>
+															setSentenceSegmentationDraft(sentence.id, event.currentTarget.value)}
+														rows="3"
+														class="mt-2 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
+													></textarea>
+												</div>
+											{/if}
+										</div>
+									{/if}
+								</div>
+							{/if}
+						{/each}
 					</div>
 				{/each}
 			</div>
 		</section>
 
 		<section class="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:p-6">
-			<div class="flex flex-wrap gap-3">
+			<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+				<div>
+					<p class="text-lg font-semibold text-zinc-950">Whole-text translation</p>
+					<p class="text-sm text-zinc-500">
+						Paste or edit the translation for the full text. Sentence mapping uses this field.
+					</p>
+				</div>
+				<button
+					type="button"
+					onclick={() => openGoogleTranslate(studyText.rawText)}
+					class="rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
+				>
+					Open source in Google Translate
+				</button>
+			</div>
+
+			<textarea
+				bind:value={wholeTranslation}
+				rows="10"
+				placeholder="Paste the full translation here"
+				class="mt-5 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
+			></textarea>
+
+			<div class="mt-4 flex flex-wrap gap-3">
+				<button
+					type="button"
+					onclick={() => void mapWholeTranslation()}
+					disabled={savePending || wholeTranslation.trim().length === 0}
+					class="rounded-xl bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
+				>
+					{savePending ? 'Mapping…' : 'Map translation to sentences'}
+				</button>
 				<button
 					type="button"
 					onclick={() => void saveProgress()}
@@ -740,16 +847,18 @@
 				>
 					{savePending ? 'Saving…' : 'Save progress'}
 				</button>
-
-				{#if studyText.relatedDrillId}
-					<a
-						href={`${resolve('/drill')}?id=${studyText.relatedDrillId}`}
-						class="rounded-xl bg-zinc-100 px-4 py-3 text-sm font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
-					>
-						Open related drill
-					</a>
-				{/if}
 			</div>
+
+			{#if translationWarnings.length > 0}
+				<div class="mt-4 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900 ring-1 ring-amber-200">
+					<p class="font-medium">Translation mapping warnings</p>
+					<ul class="mt-2 list-disc space-y-1 pl-5">
+						{#each translationWarnings as warning, index (index)}
+							<li>{warning}</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
 
 			{#if message}
 				<p class="mt-4 text-sm text-emerald-700">{message}</p>
