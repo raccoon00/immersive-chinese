@@ -360,7 +360,7 @@ export async function saveStudyText(
 	nextStudyText.updatedAt = nowIso();
 	await ensureStudyTextsDir();
 	await writeFile(getStudyTextPath(studyTextId), JSON.stringify(nextStudyText, null, 2), 'utf8');
-	return nextStudyText;
+	return enrichSentenceSegmentation(nextStudyText);
 }
 
 export async function mapWholeTranslationForStudyText(
@@ -381,7 +381,10 @@ export async function mapWholeTranslationForStudyText(
 		JSON.stringify(applied.studyText, null, 2),
 		'utf8'
 	);
-	return applied;
+	return {
+		studyText: await enrichSentenceSegmentation(applied.studyText),
+		mapping: applied.mapping
+	};
 }
 
 export async function deleteStudyText(studyTextId: string): Promise<void> {

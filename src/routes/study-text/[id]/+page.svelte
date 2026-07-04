@@ -1,6 +1,5 @@
 <!-- eslint-disable svelte/no-navigation-without-resolve -->
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { serializeSentenceSegmentation } from '$lib/study-text/segmentSentence';
 	import type {
@@ -16,8 +15,9 @@
 	};
 
 	let { data }: { data: PageData } = $props();
+	let currentStudyText = $state<StudyText | null>(null);
 
-	const studyText = $derived(data.studyText);
+	const studyText = $derived(currentStudyText ?? data.studyText);
 	const paragraphs = $derived(studyText.paragraphs);
 	const sentences = $derived(studyText.sentences);
 	const sentencesById = $derived(
@@ -39,12 +39,15 @@
 	let message = $state<string | null>(null);
 	let errorMessage = $state<string | null>(null);
 	let initializedStudyId = $state('');
+	let initializedStudyVersion = $state('');
 
 	$effect(() => {
-		if (studyText.id === initializedStudyId) {
+		const studyVersion = `${studyText.id}:${studyText.updatedAt}`;
+		if (studyVersion === initializedStudyVersion) {
 			return;
 		}
 
+		const studyIdChanged = studyText.id !== initializedStudyId;
 		title = studyText.title;
 		wholeTranslation = studyText.wholeTranslation ?? '';
 		sentenceTranslations = Object.fromEntries(
@@ -65,12 +68,15 @@
 		activeTokenId = null;
 		selectionJustMadeTokenId = null;
 		changingTokenId = null;
-		translationWarnings = [];
 		rawTextDraft = studyText.rawText;
 		editingText = false;
-		message = null;
-		errorMessage = null;
+		if (studyIdChanged) {
+			translationWarnings = [];
+			message = null;
+			errorMessage = null;
+		}
 		initializedStudyId = studyText.id;
+		initializedStudyVersion = studyVersion;
 	});
 
 	function sentenceForParagraph(sentenceId: string): StudySentence | undefined {
@@ -130,11 +136,8 @@
 				throw new Error(payload.error ?? `Save failed with status ${response.status}`);
 			}
 
+			currentStudyText = payload.studyText;
 			message = successMessage;
-			await goto(`${resolve('/study-text')}/${payload.studyText.id}`, {
-				replaceState: true,
-				invalidateAll: true
-			});
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'Failed to save study text.';
 		} finally {
@@ -182,6 +185,7 @@
 				throw new Error(payload.error ?? `Mapping failed with status ${response.status}`);
 			}
 
+			currentStudyText = payload.studyText;
 			translationWarnings = payload.mapping.warnings;
 			sentenceTranslations = Object.fromEntries(
 				payload.studyText.sentences.map((sentence) => [sentence.id, sentence.translation ?? ''])
