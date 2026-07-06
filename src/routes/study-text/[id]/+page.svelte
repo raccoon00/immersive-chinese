@@ -2,7 +2,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { speakChinese } from '$lib/client/speakText';
-	import { numberTokenToPinyin } from '$lib/study-text/numbers';
+	import { integerToChineseReading, numberTokenToPinyin } from '$lib/study-text/numbers';
 	import { formatPinyinForDisplay } from '$lib/study-text/pinyin';
 	import { splitTranslationIntoSentences } from '$lib/study-text/parseTranslation';
 	import { serializeSentenceSegmentation } from '$lib/study-text/segmentSentence';
@@ -22,6 +22,11 @@
 	type TokenManualOverrideDraft = {
 		translation: string;
 		pinyin: string;
+	};
+
+	type SentenceDrillRow = {
+		hanzi: string;
+		translation: string;
 	};
 
 	let { data }: { data: PageData } = $props();
@@ -57,6 +62,7 @@
 	let rawTextDraft = $state('');
 	let savePending = $state(false);
 	let mappingPending = $state(false);
+	let writingPracticeSentenceId = $state<string | null>(null);
 	const autosaveDelayMs = 800;
 	let message = $state<string | null>(null);
 	let errorMessage = $state<string | null>(null);
@@ -767,6 +773,95 @@
 		return 'text-sky-900 underline decoration-sky-300 decoration-dotted underline-offset-4';
 	}
 
+	function sentenceDrillRowForToken(token: StudyToken): SentenceDrillRow | null {
+		if (token.kind !== 'word') {
+			return null;
+		}
+
+		const numericHanzi = integerToChineseReading(token.text);
+		if (numericHanzi) {
+			return {
+				hanzi: numericHanzi,
+				translation: token.text
+			};
+		}
+
+		const selectedMatch = selectedMatchForToken(token);
+		const translation =
+			selectedMatch?.definitions.join('; ').trim() ||
+			currentTokenManualOverride(token).translation.trim() ||
+			token.selectedTranslation?.trim() ||
+			token.dictionaryMatches[0]?.definitions.join('; ').trim() ||
+			token.text;
+		const hanzi = token.text.trim();
+		if (!hanzi || !translation) {
+			return null;
+		}
+
+		return { hanzi, translation };
+	}
+
+	function sentenceDrillRows(sentence: StudySentence): SentenceDrillRow[] {
+		const seenHanzi = new Set<string>();
+		const rows: SentenceDrillRow[] = [];
+
+		for (const token of sentence.segmentation.tokens) {
+			const row = sentenceDrillRowForToken(token);
+			if (!row || seenHanzi.has(row.hanzi)) {
+				continue;
+			}
+
+			seenHanzi.add(row.hanzi);
+			rows.push(row);
+		}
+
+		return rows;
+	}
+
+	async function openSentenceWritingPractice(sentence: StudySentence): Promise<void> {
+		message = null;
+		errorMessage = null;
+
+		const rows = sentenceDrillRows(sentence);
+		if (rows.length === 0) {
+			errorMessage = 'No practice words found in this sentence.';
+			return;
+		}
+
+		const drillWindow = window.open('about:blank', '_blank');
+		if (!drillWindow) {
+			errorMessage = 'Failed to open writing practice tab.';
+			return;
+		}
+
+		writingPracticeSentenceId = sentence.id;
+
+		try {
+			const response = await fetch('/api/drills/sentence_drill', {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json'
+				},
+				body: JSON.stringify({ rows })
+			});
+			const payload = (await response.json()) as {
+				error?: string;
+			};
+
+			if (!response.ok) {
+				throw new Error(payload.error ?? `Failed to create drill with status ${response.status}`);
+			}
+
+			drillWindow.location.href = `${resolve('/drill')}?id=sentence_drill`;
+		} catch (error) {
+			drillWindow.close();
+			errorMessage =
+				error instanceof Error ? error.message : 'Failed to open sentence writing practice.';
+		} finally {
+			writingPracticeSentenceId = null;
+		}
+	}
+
 	async function playSentenceTts(text: string): Promise<void> {
 		message = null;
 		errorMessage = null;
@@ -779,7 +874,7 @@
 	}
 
 	function sentenceActionButtonClass(
-		kind: 'audio' | 'translation' | 'pinyin' | 'segmentation',
+		kind: 'audio' | 'writing' | 'translation' | 'pinyin' | 'segmentation',
 		active: boolean
 	): string {
 		const base =
@@ -789,6 +884,12 @@
 			return active
 				? `${base} bg-emerald-600 text-white ring-emerald-600 hover:bg-emerald-500`
 				: `${base} bg-emerald-50 text-emerald-900 ring-emerald-200 hover:bg-emerald-100`;
+		}
+
+		if (kind === 'writing') {
+			return active
+				? `${base} bg-rose-600 text-white ring-rose-600 hover:bg-rose-500`
+				: `${base} bg-rose-50 text-rose-900 ring-rose-200 hover:bg-rose-100`;
 		}
 
 		if (kind === 'translation') {
@@ -1173,6 +1274,19 @@
 											title="Play sentence audio"
 										>
 											<span aria-hidden="true" class="text-sm">🔊</span>
+										</button>
+										<button
+											type="button"
+											onclick={() => void openSentenceWritingPractice(sentence)}
+											disabled={writingPracticeSentenceId === sentence.id}
+											class={sentenceActionButtonClass('writing', false)}
+										>
+											<span aria-hidden="true" class="text-sm">✍</span>
+											<span
+												>{writingPracticeSentenceId === sentence.id
+													? 'Preparing…'
+													: 'Writing practice'}</span
+											>
 										</button>
 										<button
 											type="button"
