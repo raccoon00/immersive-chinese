@@ -13,6 +13,7 @@ export type DictionaryMatch = {
 	partsOfSpeech?: string[];
 	classifiers?: string[];
 	frequency?: number;
+	sourcePosition?: number;
 };
 
 export type SentenceSegmentation = {

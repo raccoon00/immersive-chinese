@@ -10,7 +10,7 @@ import type {
 	StudyToken,
 	TranslationMappingResult
 } from '$lib/study-text/types';
-import { lookupDictionaryMatches } from '$lib/server/lexicon';
+import { lookupCharacterFallbackPinyin, lookupDictionaryMatches } from '$lib/server/lexicon';
 
 const studyTextsDir = resolve('data/study-texts');
 const studyTextIdPattern = /^[a-z0-9_-]{6,120}$/i;
@@ -106,11 +106,17 @@ async function enrichToken(token: StudyToken): Promise<StudyToken> {
 	const selectedDictionaryMatch = token.selectedDictionaryEntryId
 		? dictionaryMatches.find((match) => match.entryId === token.selectedDictionaryEntryId)
 		: undefined;
+	const fallbackPinyin =
+		dictionaryMatches.length === 0 ? await lookupCharacterFallbackPinyin(token.text) : undefined;
 
 	return {
 		...token,
 		dictionaryMatches,
-		pinyin: token.pinyin ?? selectedDictionaryMatch?.pinyin ?? dictionaryMatches[0]?.pinyin,
+		pinyin:
+			selectedDictionaryMatch?.pinyin?.trim() ||
+			dictionaryMatches[0]?.pinyin?.trim() ||
+			token.pinyin ||
+			fallbackPinyin,
 		selectedTranslation:
 			token.selectedTranslation ?? selectedDictionaryMatch?.definitions.join('; '),
 		tags: [...new Set(dictionaryMatches.flatMap((match) => match.tags ?? []))]

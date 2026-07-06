@@ -100,7 +100,7 @@ function parseCompleteJson(contents: string, index: Map<string, DictionaryMatch[
 }
 
 function parseCedict(contents: string, index: Map<string, DictionaryMatch[]>): void {
-	for (const line of contents.split(/\r?\n/)) {
+	for (const [sourcePosition, line] of contents.split(/\r?\n/).entries()) {
 		const trimmed = line.trim();
 		if (!trimmed || trimmed.startsWith('#')) {
 			continue;
@@ -124,7 +124,8 @@ function parseCedict(contents: string, index: Map<string, DictionaryMatch[]>): v
 			traditional,
 			pinyin,
 			definitions,
-			source: 'cc-cedict'
+			source: 'cc-cedict',
+			sourcePosition
 		};
 
 		addMatch(index, simplified, dictionaryMatch);
@@ -167,6 +168,13 @@ async function loadLexiconIndex(): Promise<LexiconIndex> {
 					return 1;
 				}
 
+				if (a.source === 'cc-cedict') {
+					return (
+						(a.sourcePosition ?? Number.MAX_SAFE_INTEGER) -
+						(b.sourcePosition ?? Number.MAX_SAFE_INTEGER)
+					);
+				}
+
 				return a.entryId.localeCompare(b.entryId);
 			})
 		);
@@ -188,4 +196,37 @@ export async function lookupDictionaryMatches(text: string): Promise<DictionaryM
 
 	const index = await getLexiconIndex();
 	return [...(index.byText.get(normalized) ?? [])];
+}
+
+export async function lookupCharacterFallbackPinyin(text: string): Promise<string | undefined> {
+	const normalized = text.trim();
+	if (!normalized) {
+		return undefined;
+	}
+
+	const parts = await Promise.all(
+		[...normalized].map(async (character) => {
+			if (/^[\p{P}\p{S}\s]+$/u.test(character)) {
+				return '';
+			}
+
+			const matches = await lookupDictionaryMatches(character);
+			if (matches.length === 0) {
+				return '';
+			}
+
+			const cedictMatch = matches
+				.filter((match) => match.source === 'cc-cedict')
+				.sort(
+					(a, b) =>
+						(a.sourcePosition ?? Number.MAX_SAFE_INTEGER) -
+						(b.sourcePosition ?? Number.MAX_SAFE_INTEGER)
+				)[0];
+			const preferredMatch = cedictMatch ?? matches[0];
+			return preferredMatch?.pinyin?.trim() ?? '';
+		})
+	);
+
+	const filteredParts = parts.filter((part) => part.length > 0);
+	return filteredParts.length > 0 ? filteredParts.join(' ') : undefined;
 }
