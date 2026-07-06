@@ -736,9 +736,9 @@
 			.join(' ');
 
 		return formatPinyinForDisplay(
-			selectedCharacterPinyin ||
-				selectedMatchForToken(token)?.pinyin?.trim() ||
+			selectedMatchForToken(token)?.pinyin?.trim() ||
 				token.dictionaryMatches[0]?.pinyin?.trim() ||
+				selectedCharacterPinyin ||
 				token.pinyin?.trim() ||
 				''
 		);

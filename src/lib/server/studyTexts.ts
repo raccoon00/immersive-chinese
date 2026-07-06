@@ -176,9 +176,9 @@ async function enrichToken(token: StudyToken): Promise<StudyToken> {
 		dictionaryMatches,
 		characterMeanings,
 		pinyin:
-			selectedCharacterPinyin ||
 			selectedDictionaryMatch?.pinyin?.trim() ||
 			dictionaryMatches[0]?.pinyin?.trim() ||
+			selectedCharacterPinyin ||
 			token.pinyin ||
 			fallbackPinyin,
 		selectedTranslation:
