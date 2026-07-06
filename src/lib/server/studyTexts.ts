@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { buildStudyTextStructure, parseStudyText } from '$lib/study-text/parseStudyText';
 import { mapWholeTranslationToStudyText } from '$lib/study-text/parseTranslation';
+import { numberTokenToPinyin } from '$lib/study-text/numbers';
 import { autoSegmentSentence, manualSegmentSentence } from '$lib/study-text/segmentSentence';
 import type {
 	RawStudyTextInput,
@@ -144,6 +145,7 @@ async function enrichToken(token: StudyToken): Promise<StudyToken> {
 		};
 	}
 
+	const numericTokenPinyin = numberTokenToPinyin(token.text);
 	const [dictionaryMatches, characterMeanings] = await Promise.all([
 		lookupDictionaryMatches(token.text),
 		buildCharacterMeanings(token)
@@ -176,6 +178,7 @@ async function enrichToken(token: StudyToken): Promise<StudyToken> {
 		dictionaryMatches,
 		characterMeanings,
 		pinyin:
+			numericTokenPinyin ||
 			selectedDictionaryMatch?.pinyin?.trim() ||
 			dictionaryMatches[0]?.pinyin?.trim() ||
 			selectedCharacterPinyin ||

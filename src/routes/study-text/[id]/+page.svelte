@@ -2,6 +2,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { speakChinese } from '$lib/client/speakText';
+	import { numberTokenToPinyin } from '$lib/study-text/numbers';
 	import { formatPinyinForDisplay } from '$lib/study-text/pinyin';
 	import { splitTranslationIntoSentences } from '$lib/study-text/parseTranslation';
 	import { serializeSentenceSegmentation } from '$lib/study-text/segmentSentence';
@@ -723,6 +724,7 @@
 	}
 
 	function displayPinyinForToken(token: StudyToken): string {
+		const numericTokenPinyin = numberTokenToPinyin(token.text);
 		const selectedCharacterPinyin = token.characterMeanings
 			.map((characterMeaning) => {
 				const selectedCharacterMatch = selectedCharacterMatchForMeaning(token, characterMeaning);
@@ -736,7 +738,8 @@
 			.join(' ');
 
 		return formatPinyinForDisplay(
-			selectedMatchForToken(token)?.pinyin?.trim() ||
+			numericTokenPinyin ||
+				selectedMatchForToken(token)?.pinyin?.trim() ||
 				token.dictionaryMatches[0]?.pinyin?.trim() ||
 				selectedCharacterPinyin ||
 				token.pinyin?.trim() ||
@@ -1087,7 +1090,8 @@
 																	{/each}
 
 																	{#if nextCharacterMeaningToSelect(token)}
-																		{@const nextCharacterMeaning = nextCharacterMeaningToSelect(token)!}
+																		{@const nextCharacterMeaning =
+																			nextCharacterMeaningToSelect(token)!}
 																		<div class="rounded-xl bg-white/5 p-2 ring-1 ring-white/10">
 																			<p
 																				class="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-400"
