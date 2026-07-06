@@ -1,6 +1,7 @@
 <!-- eslint-disable svelte/no-navigation-without-resolve -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { speakChinese } from '$lib/client/speakText';
 	import { splitTranslationIntoSentences } from '$lib/study-text/parseTranslation';
 	import { serializeSentenceSegmentation } from '$lib/study-text/segmentSentence';
 	import type {
@@ -35,6 +36,7 @@
 	let visibleSentencePinyin = $state<Record<string, boolean>>({});
 	let separateWords = $state(false);
 	let activeTokenId = $state<string | null>(null);
+	let pinnedTokenId = $state<string | null>(null);
 	let selectionJustMadeTokenId = $state<string | null>(null);
 	let changingTokenId = $state<string | null>(null);
 	let sentenceTranslationEditorId = $state<string | null>(null);
@@ -94,6 +96,7 @@
 				);
 		if (!preserveLocalDrafts) {
 			activeTokenId = null;
+			pinnedTokenId = null;
 			selectionJustMadeTokenId = null;
 			changingTokenId = null;
 			rawTextDraft = studyText.rawText;
@@ -323,15 +326,24 @@
 	}
 
 	function showTokenPopup(tokenId: string): void {
-		activeTokenId = tokenId;
-	}
-
-	function hideTokenPopup(tokenId: string): void {
-		if (activeTokenId !== tokenId) {
+		if (pinnedTokenId && pinnedTokenId !== tokenId) {
 			return;
 		}
 
-		activeTokenId = null;
+		activeTokenId = tokenId;
+	}
+
+	function closeTokenPopup(tokenId: string): void {
+		if (activeTokenId !== tokenId && pinnedTokenId !== tokenId) {
+			return;
+		}
+
+		if (activeTokenId === tokenId) {
+			activeTokenId = null;
+		}
+		if (pinnedTokenId === tokenId) {
+			pinnedTokenId = null;
+		}
 		if (selectionJustMadeTokenId === tokenId) {
 			selectionJustMadeTokenId = null;
 		}
@@ -340,10 +352,53 @@
 		}
 	}
 
+	function hideTokenPopup(tokenId: string): void {
+		if (pinnedTokenId === tokenId) {
+			return;
+		}
+
+		closeTokenPopup(tokenId);
+	}
+
+	function togglePinnedTokenPopup(tokenId: string): void {
+		if (pinnedTokenId === tokenId) {
+			closeTokenPopup(tokenId);
+			return;
+		}
+
+		if (pinnedTokenId) {
+			closeTokenPopup(pinnedTokenId);
+		}
+
+		pinnedTokenId = tokenId;
+		activeTokenId = tokenId;
+	}
+
+	function handleWindowClick(event: MouseEvent): void {
+		if (!pinnedTokenId) {
+			return;
+		}
+
+		const clickedInsidePopup = event
+			.composedPath()
+			.some(
+				(node) => node instanceof Element && node.matches('[data-token-popup-root="true"]')
+			);
+		if (clickedInsidePopup) {
+			return;
+		}
+
+		closeTokenPopup(pinnedTokenId);
+	}
+
 	function handleTokenFocusOut(
 		tokenId: string,
 		event: FocusEvent & { currentTarget: EventTarget & HTMLElement }
 	): void {
+		if (pinnedTokenId === tokenId) {
+			return;
+		}
+
 		const nextTarget = event.relatedTarget;
 		if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
 			return;
@@ -373,6 +428,7 @@
 	}
 
 	function changeTokenSelection(tokenId: string): void {
+		pinnedTokenId = tokenId;
 		activeTokenId = tokenId;
 		changingTokenId = tokenId;
 		selectionJustMadeTokenId = null;
@@ -422,12 +478,29 @@
 		return 'text-sky-900 underline decoration-sky-300 decoration-dotted underline-offset-4';
 	}
 
+	async function playSentenceTts(text: string): Promise<void> {
+		message = null;
+		errorMessage = null;
+
+		try {
+			await speakChinese(text);
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'Failed to play sentence audio.';
+		}
+	}
+
 	function sentenceActionButtonClass(
-		kind: 'translation' | 'pinyin' | 'segmentation',
+		kind: 'audio' | 'translation' | 'pinyin' | 'segmentation',
 		active: boolean
 	): string {
 		const base =
 			'inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium ring-1 transition';
+
+		if (kind === 'audio') {
+			return active
+				? `${base} bg-emerald-600 text-white ring-emerald-600 hover:bg-emerald-500`
+				: `${base} bg-emerald-50 text-emerald-900 ring-emerald-200 hover:bg-emerald-100`;
+		}
 
 		if (kind === 'translation') {
 			return active
@@ -463,6 +536,8 @@
 		content="Read Chinese text, choose word meanings, and manage sentence translations."
 	/>
 </svelte:head>
+
+<svelte:window onclick={handleWindowClick} />
 
 <div class="min-h-screen bg-zinc-100 text-zinc-950">
 	<div
@@ -575,6 +650,7 @@
 											{@const tokenPinyin = displayPinyinForToken(token)}
 											{#if separateWords && index > 0}<span aria-hidden="true"> </span>{/if}
 											<span
+												data-token-popup-root="true"
 												role="group"
 												class="relative inline-flex flex-col items-center align-top"
 												onmouseenter={() => showTokenPopup(token.id)}
@@ -590,6 +666,7 @@
 												{/if}
 												<button
 													type="button"
+													onclick={() => togglePinnedTokenPopup(token.id)}
 													onfocus={() => showTokenPopup(token.id)}
 													class={`inline rounded-sm px-0.5 py-0.5 align-baseline transition hover:bg-white focus-visible:bg-white ${tokenTextClassName(token)}`}
 												>
@@ -739,6 +816,15 @@
 									</div>
 
 									<div class="mt-3 flex flex-wrap gap-2">
+										<button
+											type="button"
+											onclick={() => void playSentenceTts(sentence.text)}
+											class={sentenceActionButtonClass('audio', false)}
+											aria-label="Play sentence audio"
+											title="Play sentence audio"
+										>
+											<span aria-hidden="true" class="text-sm">🔊</span>
+										</button>
 										<button
 											type="button"
 											onclick={() => toggleSentenceTranslationVisibility(sentence.id)}
