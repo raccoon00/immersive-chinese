@@ -422,6 +422,30 @@
 		return 'text-sky-900 underline decoration-sky-300 decoration-dotted underline-offset-4';
 	}
 
+	function sentenceActionButtonClass(
+		kind: 'translation' | 'pinyin' | 'segmentation',
+		active: boolean
+	): string {
+		const base =
+			'inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium ring-1 transition';
+
+		if (kind === 'translation') {
+			return active
+				? `${base} bg-sky-600 text-white ring-sky-600 hover:bg-sky-500`
+				: `${base} bg-sky-50 text-sky-900 ring-sky-200 hover:bg-sky-100`;
+		}
+
+		if (kind === 'pinyin') {
+			return active
+				? `${base} bg-violet-600 text-white ring-violet-600 hover:bg-violet-500`
+				: `${base} bg-violet-50 text-violet-900 ring-violet-200 hover:bg-violet-100`;
+		}
+
+		return active
+			? `${base} bg-amber-500 text-white ring-amber-500 hover:bg-amber-400`
+			: `${base} bg-amber-50 text-amber-900 ring-amber-200 hover:bg-amber-100`;
+	}
+
 	function openGoogleTranslate(text: string): void {
 		const url = new URL('https://translate.google.com/');
 		url.searchParams.set('sl', 'zh-CN');
@@ -718,25 +742,35 @@
 										<button
 											type="button"
 											onclick={() => toggleSentenceTranslationVisibility(sentence.id)}
-											class="rounded-xl bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
+											class={sentenceActionButtonClass(
+												'translation',
+												Boolean(visibleSentenceTranslations[sentence.id])
+											)}
 										>
-											{visibleSentenceTranslations[sentence.id]
-												? 'Hide translation'
-												: 'Show translation'}
+											<span aria-hidden="true" class="text-sm">文</span>
+											<span>Translation</span>
 										</button>
 										<button
 											type="button"
 											onclick={() => toggleSentencePinyinVisibility(sentence.id)}
-											class="rounded-xl bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
+											class={sentenceActionButtonClass(
+												'pinyin',
+												Boolean(visibleSentencePinyin[sentence.id])
+											)}
 										>
-											{visibleSentencePinyin[sentence.id] ? 'Hide pinyin' : 'Show pinyin'}
+											<span aria-hidden="true" class="text-sm">拼</span>
+											<span>Pinyin</span>
 										</button>
 										<button
 											type="button"
 											onclick={() => toggleSentenceSegmentationEditor(sentence.id)}
-											class="rounded-xl bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-200"
+											class={sentenceActionButtonClass(
+												'segmentation',
+												sentenceSegmentationEditorId === sentence.id
+											)}
 										>
-											Edit word separation
+											<span aria-hidden="true" class="text-sm">✂</span>
+											<span>Word separation</span>
 										</button>
 									</div>
 
