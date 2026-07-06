@@ -34,6 +34,7 @@
 	let selectedTokenEntryIds = $state<Record<string, string>>({});
 	let visibleSentenceTranslations = $state<Record<string, boolean>>({});
 	let visibleSentencePinyin = $state<Record<string, boolean>>({});
+	let sentenceSegmentationErrors = $state<Record<string, string | null>>({});
 	let separateWords = $state(false);
 	let activeTokenId = $state<string | null>(null);
 	let pinnedTokenId = $state<string | null>(null);
@@ -45,6 +46,8 @@
 	let editingText = $state(false);
 	let rawTextDraft = $state('');
 	let savePending = $state(false);
+	let mappingPending = $state(false);
+	const autosaveDelayMs = 800;
 	let message = $state<string | null>(null);
 	let errorMessage = $state<string | null>(null);
 	let initializedStudyId = $state('');
@@ -92,6 +95,13 @@
 			: Object.fromEntries(
 					Object.entries(visibleSentencePinyin).filter(
 						([sentenceId, visible]) => visible && sentenceIdSet.has(sentenceId)
+					)
+				);
+		sentenceSegmentationErrors = studyIdChanged
+			? {}
+			: Object.fromEntries(
+					Object.entries(sentenceSegmentationErrors).filter(
+						([sentenceId, error]) => typeof error === 'string' && sentenceIdSet.has(sentenceId)
 					)
 				);
 		if (!preserveLocalDrafts) {
@@ -151,6 +161,10 @@
 		sentenceSegmentationDrafts = {
 			...sentenceSegmentationDrafts,
 			[sentenceId]: segmentation
+		};
+		sentenceSegmentationErrors = {
+			...sentenceSegmentationErrors,
+			[sentenceId]: null
 		};
 	}
 
@@ -243,8 +257,116 @@
 		editingText = false;
 	}
 
+	function normalizeWhitespace(text: string): string {
+		return text.replace(/\s+/gu, '');
+	}
+
+	function canonicalizeSentenceSegmentation(segmentationText: string): string {
+		return segmentationText
+			.split('|')
+			.map((part) => part.trim())
+			.filter((part) => part.length > 0)
+			.join(' | ');
+	}
+
+	function createAutosavePayload(): Record<string, unknown> {
+		return {
+			title: title.trim().length > 0 ? title.trim() : studyText.title,
+			wholeTranslation,
+			sentenceTranslations: Object.fromEntries(
+				studyText.sentences.map((sentence) => [
+					sentence.id,
+					(sentenceTranslations[sentence.id] ?? '').trim()
+				])
+			),
+			sentenceSegmentations: Object.fromEntries(
+				studyText.sentences.map((sentence) => [
+					sentence.id,
+					canonicalizeSentenceSegmentation(sentenceSegmentationDrafts[sentence.id] ?? '')
+				])
+			),
+			tokenSelections: Object.fromEntries(
+				Object.entries(selectedTokenEntryIds)
+					.filter(([, value]) => value.length > 0)
+					.sort(([left], [right]) => left.localeCompare(right))
+			),
+			status: 'in_progress'
+		};
+	}
+
+	function createPersistedAutosavePayload(): Record<string, unknown> {
+		return {
+			title: studyText.title,
+			wholeTranslation: studyText.wholeTranslation ?? '',
+			sentenceTranslations: Object.fromEntries(
+				studyText.sentences.map((sentence) => [sentence.id, sentence.translation ?? ''])
+			),
+			sentenceSegmentations: Object.fromEntries(
+				studyText.sentences.map((sentence) => [
+					sentence.id,
+					serializeSentenceSegmentation(sentence.segmentation.tokens)
+				])
+			),
+			tokenSelections: Object.fromEntries(
+				studyText.sentences
+					.flatMap((sentence) => sentence.segmentation.tokens)
+					.filter((token) => typeof token.selectedDictionaryEntryId === 'string')
+					.map((token) => [token.id, token.selectedDictionaryEntryId ?? ''])
+					.sort(([left], [right]) => left.localeCompare(right))
+			),
+			status: 'in_progress'
+		};
+	}
+
+	function validateAllSentenceSegmentations(): Record<string, string | null> {
+		return Object.fromEntries(
+			studyText.sentences.map((sentence) => [
+				sentence.id,
+				validateSentenceSegmentation(sentence.id)
+			])
+		);
+	}
+
+	$effect(() => {
+		if (initializedStudyVersion.length === 0 || mappingPending) {
+			return;
+		}
+
+		const autosavePayload = createAutosavePayload();
+		const autosaveSignature = JSON.stringify(autosavePayload);
+		const persistedSignature = JSON.stringify(createPersistedAutosavePayload());
+
+		if (autosaveSignature === persistedSignature) {
+			sentenceSegmentationErrors = Object.fromEntries(
+				studyText.sentences.map((sentence) => [sentence.id, null])
+			);
+			return;
+		}
+
+		const nextErrors = validateAllSentenceSegmentations();
+		const firstInvalidSentenceId = studyText.sentences.find(
+			(sentence) => typeof nextErrors[sentence.id] === 'string'
+		)?.id;
+		const hasValidationError = Boolean(firstInvalidSentenceId);
+		sentenceSegmentationErrors = nextErrors;
+		if (hasValidationError) {
+			sentenceSegmentationEditorId = firstInvalidSentenceId ?? sentenceSegmentationEditorId;
+			message = null;
+			errorMessage = null;
+			return;
+		}
+
+		const timeoutId = setTimeout(() => {
+			void saveStudyText(autosavePayload, undefined, { preserveLocalDrafts: true });
+		}, autosaveDelayMs);
+
+		return () => {
+			clearTimeout(timeoutId);
+		};
+	});
+
 	async function mapWholeTranslation(): Promise<void> {
-		savePending = true;
+		mappingPending = true;
 		message = null;
 		errorMessage = null;
 
@@ -282,40 +404,34 @@
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'Failed to map translation.';
 		} finally {
-			savePending = false;
+			mappingPending = false;
 		}
 	}
 
-	async function applySentenceChanges(sentenceId: string, successMessage: string): Promise<void> {
-		await saveStudyText(
-			{
-				title,
-				wholeTranslation,
-				sentenceTranslations: {
-					[sentenceId]: sentenceTranslations[sentenceId] ?? ''
-				},
-				sentenceSegmentations: {
-					[sentenceId]: sentenceSegmentationDrafts[sentenceId] ?? ''
-				},
-				tokenSelections: selectedTokenEntryIds,
-				status: 'in_progress'
-			},
-			successMessage
-		);
-	}
+	function validateSentenceSegmentation(sentenceId: string): string | null {
+		const sentence = sentencesById[sentenceId];
+		if (!sentence) {
+			return 'Sentence not found.';
+		}
 
-	async function saveProgress(): Promise<void> {
-		await saveStudyText(
-			{
-				title,
-				wholeTranslation,
-				sentenceTranslations,
-				sentenceSegmentations: sentenceSegmentationDrafts,
-				tokenSelections: selectedTokenEntryIds,
-				status: 'in_progress'
-			},
-			'Progress saved.'
-		);
+		const segmentationText = sentenceSegmentationDrafts[sentenceId] ?? '';
+		const rebuiltText = segmentationText
+			.split('|')
+			.map((part) => part.trim())
+			.filter((part) => part.length > 0)
+			.join('');
+		const normalizedRebuiltText = normalizeWhitespace(rebuiltText);
+		const normalizedSentenceText = normalizeWhitespace(sentence.text);
+
+		if (normalizedRebuiltText === normalizedSentenceText) {
+			return null;
+		}
+
+		if (normalizedRebuiltText.length === 0) {
+			return 'Word separation cannot be empty.';
+		}
+
+		return `This split rebuilds "${rebuiltText}" but the sentence is "${sentence.text}". Whitespace differences are ignored.`;
 	}
 
 	function selectedMatchForToken(token: StudyToken): DictionaryMatch | undefined {
@@ -381,9 +497,7 @@
 
 		const clickedInsidePopup = event
 			.composedPath()
-			.some(
-				(node) => node instanceof Element && node.matches('[data-token-popup-root="true"]')
-			);
+			.some((node) => node instanceof Element && node.matches('[data-token-popup-root="true"]'));
 		if (clickedInsidePopup) {
 			return;
 		}
@@ -600,10 +714,10 @@
 						<button
 							type="button"
 							onclick={() => void finishEditingText()}
-							disabled={savePending}
+							disabled={savePending || mappingPending}
 							class="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
 						>
-							{savePending ? 'Saving…' : 'Finish editing text'}
+							{savePending || mappingPending ? 'Saving…' : 'Finish editing text'}
 						</button>
 						<button
 							type="button"
@@ -921,18 +1035,6 @@
 													<div class="flex flex-wrap gap-2">
 														<button
 															type="button"
-															onclick={() =>
-																void applySentenceChanges(
-																	sentence.id,
-																	'Sentence translation saved.'
-																)}
-															disabled={savePending}
-															class="rounded-xl bg-zinc-950 px-3 py-2 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-														>
-															{savePending ? 'Saving…' : 'Save translation'}
-														</button>
-														<button
-															type="button"
 															onclick={() => toggleSentenceTranslationEditor(sentence.id)}
 															class="rounded-xl bg-white px-3 py-2 text-xs font-medium text-zinc-800 ring-1 ring-zinc-200 transition hover:bg-zinc-50"
 														>
@@ -951,25 +1053,22 @@
 											</p>
 											<p class="mt-2 text-xs text-zinc-500">
 												Use <span class="font-semibold">|</span> between tokens, for example:
-												<span class="font-medium text-zinc-700"> 你 | 好 | ！</span>
+												<span class="font-medium text-zinc-700"> 你 | 好 | ！</span>. Whitespace is
+												ignored for validation.
 											</p>
 											<textarea
 												value={sentenceSegmentationDrafts[sentence.id] ?? ''}
 												oninput={(event) =>
 													setSentenceSegmentationDraft(sentence.id, event.currentTarget.value)}
 												rows="3"
-												class="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
+												class={`mt-2 w-full rounded-2xl border px-3 py-2 text-sm text-zinc-950 outline-none transition focus:bg-white ${sentenceSegmentationErrors[sentence.id] ? 'border-red-300 bg-red-50 focus:border-red-400' : 'border-zinc-200 bg-zinc-50 focus:border-zinc-400'}`}
 											></textarea>
+											{#if sentenceSegmentationErrors[sentence.id]}
+												<p class="mt-2 text-sm text-red-600">
+													{sentenceSegmentationErrors[sentence.id]}
+												</p>
+											{/if}
 											<div class="mt-3 flex flex-wrap gap-2">
-												<button
-													type="button"
-													onclick={() =>
-														void applySentenceChanges(sentence.id, 'Word separation saved.')}
-													disabled={savePending}
-													class="rounded-xl bg-zinc-950 px-3 py-2 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-												>
-													{savePending ? 'Saving…' : 'Save word separation'}
-												</button>
 												<button
 													type="button"
 													onclick={() => toggleSentenceSegmentationEditor(sentence.id)}
@@ -1012,23 +1111,16 @@
 				class="mt-5 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:bg-white"
 			></textarea>
 
-			<div class="mt-4 flex flex-wrap gap-3">
+			<div class="mt-4 flex flex-wrap items-center gap-3">
 				<button
 					type="button"
 					onclick={() => void mapWholeTranslation()}
-					disabled={savePending || wholeTranslation.trim().length === 0}
+					disabled={savePending || mappingPending || wholeTranslation.trim().length === 0}
 					class="rounded-xl bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
 				>
-					{savePending ? 'Mapping…' : 'Map translation to sentences'}
+					{mappingPending ? 'Mapping…' : 'Map translation to sentences'}
 				</button>
-				<button
-					type="button"
-					onclick={() => void saveProgress()}
-					disabled={savePending}
-					class="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
-				>
-					{savePending ? 'Saving…' : 'Save progress'}
-				</button>
+				<p class="text-sm text-zinc-500">Changes autosave automatically.</p>
 			</div>
 
 			{#if translationWarnings.length > 0}

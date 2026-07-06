@@ -3,6 +3,10 @@ import type { SentenceSegmentation, StudyToken, StudyTokenKind } from '$lib/stud
 const punctuationPattern = /^[\p{P}\p{S}]+$/u;
 const whitespacePattern = /^\s+$/u;
 
+function normalizeWhitespace(text: string): string {
+	return text.replace(/\s+/gu, '');
+}
+
 function inferTokenKind(text: string, isWordLike: boolean | undefined): StudyTokenKind {
 	if (punctuationPattern.test(text)) {
 		return 'punctuation';
@@ -58,9 +62,9 @@ export function manualSegmentSentence(
 		throw new Error('Manual segmentation cannot be empty.');
 	}
 
-	if (parts.join('') !== sentenceText) {
+	if (normalizeWhitespace(parts.join('')) !== normalizeWhitespace(sentenceText)) {
 		throw new Error(
-			'Manual segmentation must exactly match the sentence text when separators are removed.'
+			'Manual segmentation must match the sentence text when separators are removed, ignoring whitespace differences.'
 		);
 	}
 
