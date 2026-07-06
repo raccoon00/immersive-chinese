@@ -47,6 +47,7 @@
 	let errorMessage = $state<string | null>(null);
 	let initializedStudyId = $state('');
 	let initializedStudyVersion = $state('');
+	let preserveLocalDraftsOnNextSync = $state(false);
 
 	$effect(() => {
 		const studyVersion = `${studyText.id}:${studyText.updatedAt}`;
@@ -56,18 +57,21 @@
 
 		const studyIdChanged = studyText.id !== initializedStudyId;
 		const sentenceIdSet = new Set(studyText.sentences.map((sentence) => sentence.id));
+		const preserveLocalDrafts = preserveLocalDraftsOnNextSync && !studyIdChanged;
 
-		title = studyText.title;
-		wholeTranslation = studyText.wholeTranslation ?? '';
-		sentenceTranslations = Object.fromEntries(
-			studyText.sentences.map((sentence) => [sentence.id, sentence.translation ?? ''])
-		);
-		sentenceSegmentationDrafts = Object.fromEntries(
-			studyText.sentences.map((sentence) => [
-				sentence.id,
-				serializeSentenceSegmentation(sentence.segmentation.tokens)
-			])
-		);
+		if (!preserveLocalDrafts) {
+			title = studyText.title;
+			wholeTranslation = studyText.wholeTranslation ?? '';
+			sentenceTranslations = Object.fromEntries(
+				studyText.sentences.map((sentence) => [sentence.id, sentence.translation ?? ''])
+			);
+			sentenceSegmentationDrafts = Object.fromEntries(
+				studyText.sentences.map((sentence) => [
+					sentence.id,
+					serializeSentenceSegmentation(sentence.segmentation.tokens)
+				])
+			);
+		}
 		selectedTokenEntryIds = Object.fromEntries(
 			studyText.sentences
 				.flatMap((sentence) => sentence.segmentation.tokens)
@@ -88,11 +92,13 @@
 						([sentenceId, visible]) => visible && sentenceIdSet.has(sentenceId)
 					)
 				);
-		activeTokenId = null;
-		selectionJustMadeTokenId = null;
-		changingTokenId = null;
-		rawTextDraft = studyText.rawText;
-		editingText = false;
+		if (!preserveLocalDrafts) {
+			activeTokenId = null;
+			selectionJustMadeTokenId = null;
+			changingTokenId = null;
+			rawTextDraft = studyText.rawText;
+			editingText = false;
+		}
 
 		if (sentenceTranslationEditorId && !sentenceIdSet.has(sentenceTranslationEditorId)) {
 			sentenceTranslationEditorId = null;
@@ -111,6 +117,7 @@
 
 		initializedStudyId = studyText.id;
 		initializedStudyVersion = studyVersion;
+		preserveLocalDraftsOnNextSync = false;
 	});
 
 	function sentenceForParagraph(sentenceId: string): StudySentence | undefined {
@@ -177,10 +184,15 @@
 
 	async function saveStudyText(
 		updates: Record<string, unknown>,
-		successMessage: string
+		successMessage?: string,
+		options?: {
+			preserveLocalDrafts?: boolean;
+		}
 	): Promise<void> {
 		savePending = true;
-		message = null;
+		if (!options?.preserveLocalDrafts) {
+			message = null;
+		}
 		errorMessage = null;
 
 		try {
@@ -201,8 +213,13 @@
 				throw new Error(payload.error ?? `Save failed with status ${response.status}`);
 			}
 
+			if (options?.preserveLocalDrafts) {
+				preserveLocalDraftsOnNextSync = true;
+			}
 			currentStudyText = payload.studyText;
-			message = successMessage;
+			if (successMessage) {
+				message = successMessage;
+			}
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'Failed to save study text.';
 		} finally {
@@ -335,13 +352,24 @@
 		hideTokenPopup(tokenId);
 	}
 
-	function chooseTokenMatch(token: StudyToken, match: DictionaryMatch): void {
+	async function chooseTokenMatch(token: StudyToken, match: DictionaryMatch): Promise<void> {
 		selectedTokenEntryIds = {
 			...selectedTokenEntryIds,
 			[token.id]: match.entryId
 		};
 		selectionJustMadeTokenId = token.id;
 		changingTokenId = null;
+
+		await saveStudyText(
+			{
+				tokenSelections: {
+					[token.id]: match.entryId
+				},
+				status: 'in_progress'
+			},
+			undefined,
+			{ preserveLocalDrafts: true }
+		);
 	}
 
 	function changeTokenSelection(tokenId: string): void {
