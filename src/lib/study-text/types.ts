@@ -36,6 +36,7 @@ export type StudyToken = {
 	selectedDictionaryEntryId?: string;
 	selectedTranslation?: string;
 	manualTranslation?: string;
+	manualPinyin?: string;
 	dictionaryMatches: DictionaryMatch[];
 	tags: string[];
 };

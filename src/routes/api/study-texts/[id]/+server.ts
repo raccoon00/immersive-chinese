@@ -62,6 +62,28 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 					) as Record<string, string>)
 				: undefined;
 
+		const tokenManualOverrides =
+			updates.tokenManualOverrides && typeof updates.tokenManualOverrides === 'object'
+				? (Object.entries(updates.tokenManualOverrides as Record<string, unknown>).reduce<
+						Record<string, { translation?: string; pinyin?: string }>
+					>((accumulator, [tokenId, value]) => {
+						if (!value || typeof value !== 'object') {
+							return accumulator;
+						}
+
+						const override = value as Record<string, unknown>;
+						const translation =
+							typeof override.translation === 'string' ? override.translation : undefined;
+						const pinyin = typeof override.pinyin === 'string' ? override.pinyin : undefined;
+						if (translation === undefined && pinyin === undefined) {
+							return accumulator;
+						}
+
+						accumulator[tokenId] = { translation, pinyin };
+						return accumulator;
+					}, {}))
+				: undefined;
+
 		const studyText = await saveStudyText(studyTextId, {
 			title: typeof updates.title === 'string' ? updates.title : undefined,
 			rawText: typeof updates.rawText === 'string' ? updates.rawText : undefined,
@@ -79,7 +101,8 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 				: undefined,
 			sentenceTranslations,
 			sentenceSegmentations,
-			tokenSelections
+			tokenSelections,
+			tokenManualOverrides
 		});
 
 		return json({ studyText });

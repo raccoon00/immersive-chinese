@@ -2,6 +2,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { speakChinese } from '$lib/client/speakText';
+	import { formatPinyinForDisplay } from '$lib/study-text/pinyin';
 	import { splitTranslationIntoSentences } from '$lib/study-text/parseTranslation';
 	import { serializeSentenceSegmentation } from '$lib/study-text/segmentSentence';
 	import type {
@@ -14,6 +15,11 @@
 
 	type PageData = {
 		studyText: StudyText;
+	};
+
+	type TokenManualOverrideDraft = {
+		translation: string;
+		pinyin: string;
 	};
 
 	let { data }: { data: PageData } = $props();
@@ -32,6 +38,7 @@
 	let sentenceTranslations = $state<Record<string, string>>({});
 	let sentenceSegmentationDrafts = $state<Record<string, string>>({});
 	let selectedTokenEntryIds = $state<Record<string, string>>({});
+	let tokenManualOverrides = $state<Record<string, TokenManualOverrideDraft>>({});
 	let visibleSentenceTranslations = $state<Record<string, boolean>>({});
 	let visibleSentencePinyin = $state<Record<string, boolean>>({});
 	let sentenceSegmentationErrors = $state<Record<string, string | null>>({});
@@ -75,6 +82,17 @@
 					sentence.id,
 					serializeSentenceSegmentation(sentence.segmentation.tokens)
 				])
+			);
+			tokenManualOverrides = Object.fromEntries(
+				studyText.sentences
+					.flatMap((sentence) => sentence.segmentation.tokens)
+					.map((token) => [
+						token.id,
+						{
+							translation: token.manualTranslation ?? '',
+							pinyin: token.manualPinyin ?? ''
+						}
+					])
 			);
 		}
 		selectedTokenEntryIds = Object.fromEntries(
@@ -269,6 +287,35 @@
 			.join(' | ');
 	}
 
+	function currentTokenManualOverride(token: StudyToken): TokenManualOverrideDraft {
+		return (
+			tokenManualOverrides[token.id] ?? {
+				translation: token.manualTranslation ?? '',
+				pinyin: token.manualPinyin ?? ''
+			}
+		);
+	}
+
+	function setTokenManualTranslation(token: StudyToken, translation: string): void {
+		tokenManualOverrides = {
+			...tokenManualOverrides,
+			[token.id]: {
+				...currentTokenManualOverride(token),
+				translation
+			}
+		};
+	}
+
+	function setTokenManualPinyin(token: StudyToken, pinyin: string): void {
+		tokenManualOverrides = {
+			...tokenManualOverrides,
+			[token.id]: {
+				...currentTokenManualOverride(token),
+				pinyin
+			}
+		};
+	}
+
 	function createAutosavePayload(): Record<string, unknown> {
 		return {
 			title: title.trim().length > 0 ? title.trim() : studyText.title,
@@ -289,6 +336,18 @@
 				Object.entries(selectedTokenEntryIds)
 					.filter(([, value]) => value.length > 0)
 					.sort(([left], [right]) => left.localeCompare(right))
+			),
+			tokenManualOverrides: Object.fromEntries(
+				studyText.sentences
+					.flatMap((sentence) => sentence.segmentation.tokens)
+					.filter((token) => token.kind === 'word')
+					.map((token) => [
+						token.id,
+						{
+							translation: currentTokenManualOverride(token).translation.trim(),
+							pinyin: currentTokenManualOverride(token).pinyin.trim()
+						}
+					])
 			),
 			status: 'in_progress'
 		};
@@ -313,6 +372,18 @@
 					.filter((token) => typeof token.selectedDictionaryEntryId === 'string')
 					.map((token) => [token.id, token.selectedDictionaryEntryId ?? ''])
 					.sort(([left], [right]) => left.localeCompare(right))
+			),
+			tokenManualOverrides: Object.fromEntries(
+				studyText.sentences
+					.flatMap((sentence) => sentence.segmentation.tokens)
+					.filter((token) => token.kind === 'word')
+					.map((token) => [
+						token.id,
+						{
+							translation: token.manualTranslation ?? '',
+							pinyin: token.manualPinyin ?? ''
+						}
+					])
 			),
 			status: 'in_progress'
 		};
@@ -568,12 +639,17 @@
 	}
 
 	function displayPinyinForToken(token: StudyToken): string {
-		return (
-			selectedMatchForToken(token)?.pinyin?.trim() ||
-			token.dictionaryMatches[0]?.pinyin?.trim() ||
-			token.pinyin?.trim() ||
-			''
+		return formatPinyinForDisplay(
+			currentTokenManualOverride(token).pinyin.trim() ||
+				selectedMatchForToken(token)?.pinyin?.trim() ||
+				token.dictionaryMatches[0]?.pinyin?.trim() ||
+				token.pinyin?.trim() ||
+				''
 		);
+	}
+
+	function displayMatchPinyin(pinyin: string | undefined): string {
+		return formatPinyinForDisplay(pinyin?.trim() || '');
 	}
 
 	function tokenTextClassName(token: StudyToken): string {
@@ -794,13 +870,54 @@
 														>
 															<div class="flex items-center justify-between gap-2">
 																<p class="text-sm font-semibold text-white">{token.text}</p>
-																{#if token.pinyin}
-																	<p class="text-[11px] text-zinc-300">{token.pinyin}</p>
+																{#if tokenPinyin}
+																	<p class="text-[11px] text-zinc-300">{tokenPinyin}</p>
 																{/if}
 															</div>
 
 															{#if token.dictionaryMatches.length === 0}
 																<p class="mt-2 text-zinc-300">No dictionary match found.</p>
+																<div
+																	class="mt-3 space-y-3 rounded-xl bg-white/5 p-3 ring-1 ring-white/10"
+																>
+																	<label class="block space-y-1.5">
+																		<span
+																			class="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-400"
+																		>
+																			Translation
+																		</span>
+																		<input
+																			type="text"
+																			value={currentTokenManualOverride(token).translation}
+																			oninput={(event) =>
+																				setTokenManualTranslation(token, event.currentTarget.value)}
+																			placeholder="Add your own translation"
+																			class="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-sky-300/50 focus:bg-white/15"
+																		/>
+																	</label>
+																	<label class="block space-y-1.5">
+																		<span
+																			class="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-400"
+																		>
+																			Pinyin
+																		</span>
+																		<input
+																			type="text"
+																			value={currentTokenManualOverride(token).pinyin}
+																			oninput={(event) =>
+																				setTokenManualPinyin(token, event.currentTarget.value)}
+																			placeholder="Use numbers or tone marks"
+																			class="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-sky-300/50 focus:bg-white/15"
+																		/>
+																	</label>
+																	{#if currentTokenManualOverride(token).pinyin.trim()}
+																		<p class="text-[11px] text-zinc-400">
+																			Shown as {formatPinyinForDisplay(
+																				currentTokenManualOverride(token).pinyin.trim()
+																			)}
+																		</p>
+																	{/if}
+																</div>
 															{:else if showFullMatchList(token)}
 																<div class="mt-2 max-h-96 space-y-2 overflow-y-auto pr-1">
 																	{#each token.dictionaryMatches as match (match.entryId)}
@@ -820,7 +937,9 @@
 																						{/if}
 																					</p>
 																					{#if match.pinyin}
-																						<p class="mt-0.5 text-zinc-300">{match.pinyin}</p>
+																						<p class="mt-0.5 text-zinc-300">
+																							{displayMatchPinyin(match.pinyin)}
+																						</p>
 																					{/if}
 																				</div>
 																				<p
@@ -877,7 +996,7 @@
 																					</p>
 																					{#if selectedMatch.pinyin}
 																						<p class="mt-0.5 text-zinc-300">
-																							{selectedMatch.pinyin}
+																							{displayMatchPinyin(selectedMatch.pinyin)}
 																						</p>
 																					{/if}
 																				</div>

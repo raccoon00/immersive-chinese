@@ -24,6 +24,13 @@ type SaveStudyTextUpdates = Partial<
 	sentenceTranslations?: Record<string, string>;
 	sentenceSegmentations?: Record<string, string>;
 	tokenSelections?: Record<string, string>;
+	tokenManualOverrides?: Record<
+		string,
+		{
+			translation?: string;
+			pinyin?: string;
+		}
+	>;
 };
 
 function getStudyTextPath(studyTextId: string): string {
@@ -113,12 +120,15 @@ async function enrichToken(token: StudyToken): Promise<StudyToken> {
 		...token,
 		dictionaryMatches,
 		pinyin:
+			token.manualPinyin?.trim() ||
 			selectedDictionaryMatch?.pinyin?.trim() ||
 			dictionaryMatches[0]?.pinyin?.trim() ||
 			token.pinyin ||
 			fallbackPinyin,
 		selectedTranslation:
-			token.selectedTranslation ?? selectedDictionaryMatch?.definitions.join('; '),
+			token.manualTranslation?.trim() ||
+			token.selectedTranslation ||
+			selectedDictionaryMatch?.definitions.join('; '),
 		tags: [...new Set(dictionaryMatches.flatMap((match) => match.tags ?? []))]
 	};
 }
@@ -200,6 +210,37 @@ function applyTokenSelections(
 								selectedTranslation: selectedDictionaryMatch?.definitions.join('; ')
 							}
 						: token;
+				})
+			}
+		}))
+	};
+}
+
+function applyTokenManualOverrides(
+	studyText: StudyText,
+	tokenManualOverrides: SaveStudyTextUpdates['tokenManualOverrides']
+): StudyText {
+	if (!tokenManualOverrides) {
+		return studyText;
+	}
+
+	return {
+		...studyText,
+		sentences: studyText.sentences.map((sentence) => ({
+			...sentence,
+			segmentation: {
+				...sentence.segmentation,
+				tokens: sentence.segmentation.tokens.map((token) => {
+					const manualOverride = tokenManualOverrides[token.id];
+					if (!manualOverride) {
+						return token;
+					}
+
+					return {
+						...token,
+						manualTranslation: manualOverride.translation?.trim() || undefined,
+						manualPinyin: manualOverride.pinyin?.trim() || undefined
+					};
 				})
 			}
 		}))
@@ -357,6 +398,7 @@ export async function saveStudyText(
 
 	nextStudyText = applySentenceSegmentations(nextStudyText, updates.sentenceSegmentations);
 	nextStudyText = applyTokenSelections(nextStudyText, updates.tokenSelections);
+	nextStudyText = applyTokenManualOverrides(nextStudyText, updates.tokenManualOverrides);
 	nextStudyText = applySentenceTranslations(nextStudyText, updates.sentenceTranslations);
 
 	if (nextStudyText.title.trim().length === 0) {
