@@ -40,6 +40,7 @@ function createToken(
 		autoProposed: options?.autoProposed ?? true,
 		manuallyEdited: options?.manuallyEdited ?? false,
 		dictionaryMatches: [],
+		characterMeanings: [],
 		tags: []
 	};
 }

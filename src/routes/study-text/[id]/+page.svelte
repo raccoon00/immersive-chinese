@@ -7,6 +7,7 @@
 	import { serializeSentenceSegmentation } from '$lib/study-text/segmentSentence';
 	import type {
 		DictionaryMatch,
+		StudyCharacterMeaning,
 		StudySentence,
 		StudyText,
 		StudyToken,
@@ -38,6 +39,7 @@
 	let sentenceTranslations = $state<Record<string, string>>({});
 	let sentenceSegmentationDrafts = $state<Record<string, string>>({});
 	let selectedTokenEntryIds = $state<Record<string, string>>({});
+	let tokenCharacterSelectionIds = $state<Record<string, string[]>>({});
 	let tokenManualOverrides = $state<Record<string, TokenManualOverrideDraft>>({});
 	let visibleSentenceTranslations = $state<Record<string, boolean>>({});
 	let visibleSentencePinyin = $state<Record<string, boolean>>({});
@@ -100,6 +102,18 @@
 				.flatMap((sentence) => sentence.segmentation.tokens)
 				.filter((token) => typeof token.selectedDictionaryEntryId === 'string')
 				.map((token) => [token.id, token.selectedDictionaryEntryId ?? ''])
+		);
+		tokenCharacterSelectionIds = Object.fromEntries(
+			studyText.sentences
+				.flatMap((sentence) => sentence.segmentation.tokens)
+				.filter((token) => token.kind === 'word')
+				.map((token) => [
+					token.id,
+					token.characterSelectionIds ??
+						token.characterMeanings.map(
+							(characterMeaning) => characterMeaning.selectedDictionaryEntryId ?? ''
+						)
+				])
 		);
 		visibleSentenceTranslations = studyIdChanged
 			? {}
@@ -306,13 +320,28 @@
 		};
 	}
 
-	function setTokenManualPinyin(token: StudyToken, pinyin: string): void {
-		tokenManualOverrides = {
-			...tokenManualOverrides,
-			[token.id]: {
-				...currentTokenManualOverride(token),
-				pinyin
-			}
+	function currentTokenCharacterSelections(token: StudyToken): string[] {
+		return tokenCharacterSelectionIds[token.id] ?? token.characterSelectionIds ?? [];
+	}
+
+	function setTokenCharacterSelection(
+		token: StudyToken,
+		characterIndex: number,
+		entryId: string
+	): void {
+		const nextSelections = [...currentTokenCharacterSelections(token)];
+		nextSelections[characterIndex] = entryId;
+		tokenCharacterSelectionIds = {
+			...tokenCharacterSelectionIds,
+			[token.id]: nextSelections
+		};
+	}
+
+	function restartTokenCharacterSelectionsFrom(token: StudyToken, characterIndex: number): void {
+		const nextSelections = [...currentTokenCharacterSelections(token)].slice(0, characterIndex);
+		tokenCharacterSelectionIds = {
+			...tokenCharacterSelectionIds,
+			[token.id]: nextSelections
 		};
 	}
 
@@ -336,6 +365,12 @@
 				Object.entries(selectedTokenEntryIds)
 					.filter(([, value]) => value.length > 0)
 					.sort(([left], [right]) => left.localeCompare(right))
+			),
+			tokenCharacterSelections: Object.fromEntries(
+				studyText.sentences
+					.flatMap((sentence) => sentence.segmentation.tokens)
+					.filter((token) => token.kind === 'word')
+					.map((token) => [token.id, currentTokenCharacterSelections(token).filter(Boolean)])
 			),
 			tokenManualOverrides: Object.fromEntries(
 				studyText.sentences
@@ -372,6 +407,18 @@
 					.filter((token) => typeof token.selectedDictionaryEntryId === 'string')
 					.map((token) => [token.id, token.selectedDictionaryEntryId ?? ''])
 					.sort(([left], [right]) => left.localeCompare(right))
+			),
+			tokenCharacterSelections: Object.fromEntries(
+				studyText.sentences
+					.flatMap((sentence) => sentence.segmentation.tokens)
+					.filter((token) => token.kind === 'word')
+					.map((token) => [
+						token.id,
+						token.characterSelectionIds ??
+							token.characterMeanings.map(
+								(characterMeaning) => characterMeaning.selectedDictionaryEntryId ?? ''
+							)
+					])
 			),
 			tokenManualOverrides: Object.fromEntries(
 				studyText.sentences
@@ -592,24 +639,13 @@
 		hideTokenPopup(tokenId);
 	}
 
-	async function chooseTokenMatch(token: StudyToken, match: DictionaryMatch): Promise<void> {
+	function chooseTokenMatch(token: StudyToken, match: DictionaryMatch): void {
 		selectedTokenEntryIds = {
 			...selectedTokenEntryIds,
 			[token.id]: match.entryId
 		};
 		selectionJustMadeTokenId = token.id;
 		changingTokenId = null;
-
-		await saveStudyText(
-			{
-				tokenSelections: {
-					[token.id]: match.entryId
-				},
-				status: 'in_progress'
-			},
-			undefined,
-			{ preserveLocalDrafts: true }
-		);
 	}
 
 	function changeTokenSelection(tokenId: string): void {
@@ -620,11 +656,59 @@
 	}
 
 	function showFullMatchList(token: StudyToken): boolean {
-		if (changingTokenId === token.id || selectionJustMadeTokenId === token.id) {
+		if (changingTokenId === token.id) {
 			return true;
 		}
 
 		return !selectedMatchForToken(token);
+	}
+
+	function selectedCharacterMatchForMeaning(
+		token: StudyToken,
+		characterMeaning: StudyCharacterMeaning
+	): DictionaryMatch | undefined {
+		const selectedEntryId =
+			currentTokenCharacterSelections(token)[characterMeaning.index] ??
+			characterMeaning.selectedDictionaryEntryId;
+		return selectedEntryId
+			? characterMeaning.dictionaryMatches.find((match) => match.entryId === selectedEntryId)
+			: undefined;
+	}
+
+	function shouldChooseCharacterMeanings(token: StudyToken): boolean {
+		return token.dictionaryMatches.length === 0 || token.characterMeanings.length > 1;
+	}
+
+	function wholeWordSelectionComplete(token: StudyToken): boolean {
+		if (token.dictionaryMatches.length === 0) {
+			return currentTokenManualOverride(token).translation.trim().length > 0;
+		}
+
+		return Boolean(selectedMatchForToken(token));
+	}
+
+	function nextCharacterMeaningToSelect(token: StudyToken): StudyCharacterMeaning | undefined {
+		if (!shouldChooseCharacterMeanings(token) || !wholeWordSelectionComplete(token)) {
+			return undefined;
+		}
+
+		return token.characterMeanings.find(
+			(characterMeaning) => !selectedCharacterMatchForMeaning(token, characterMeaning)
+		);
+	}
+
+	function selectedCharacterMeanings(token: StudyToken): StudyCharacterMeaning[] {
+		return token.characterMeanings.filter((characterMeaning) =>
+			Boolean(selectedCharacterMatchForMeaning(token, characterMeaning))
+		);
+	}
+
+	function wholeWordSelectionLabel(token: StudyToken): string {
+		if (token.dictionaryMatches.length === 0) {
+			return currentTokenManualOverride(token).translation.trim();
+		}
+
+		return selectedMatchForToken(token)?.definitions.join('; ') ?? '';
 	}
 
 	function currentSentenceTranslation(sentence: StudySentence): string {
@@ -639,8 +723,20 @@
 	}
 
 	function displayPinyinForToken(token: StudyToken): string {
+		const selectedCharacterPinyin = token.characterMeanings
+			.map((characterMeaning) => {
+				const selectedCharacterMatch = selectedCharacterMatchForMeaning(token, characterMeaning);
+				return (
+					selectedCharacterMatch?.pinyin?.trim() ||
+					characterMeaning.dictionaryMatches[0]?.pinyin?.trim() ||
+					''
+				);
+			})
+			.filter((part) => part.length > 0)
+			.join(' ');
+
 		return formatPinyinForDisplay(
-			currentTokenManualOverride(token).pinyin.trim() ||
+			selectedCharacterPinyin ||
 				selectedMatchForToken(token)?.pinyin?.trim() ||
 				token.dictionaryMatches[0]?.pinyin?.trim() ||
 				token.pinyin?.trim() ||
@@ -876,7 +972,9 @@
 															</div>
 
 															{#if token.dictionaryMatches.length === 0}
-																<p class="mt-2 text-zinc-300">No dictionary match found.</p>
+																<p class="mt-2 text-zinc-300">
+																	No whole-word dictionary match found.
+																</p>
 																<div
 																	class="mt-3 space-y-3 rounded-xl bg-white/5 p-3 ring-1 ring-white/10"
 																>
@@ -895,28 +993,6 @@
 																			class="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-sky-300/50 focus:bg-white/15"
 																		/>
 																	</label>
-																	<label class="block space-y-1.5">
-																		<span
-																			class="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-400"
-																		>
-																			Pinyin
-																		</span>
-																		<input
-																			type="text"
-																			value={currentTokenManualOverride(token).pinyin}
-																			oninput={(event) =>
-																				setTokenManualPinyin(token, event.currentTarget.value)}
-																			placeholder="Use numbers or tone marks"
-																			class="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-sky-300/50 focus:bg-white/15"
-																		/>
-																	</label>
-																	{#if currentTokenManualOverride(token).pinyin.trim()}
-																		<p class="text-[11px] text-zinc-400">
-																			Shown as {formatPinyinForDisplay(
-																				currentTokenManualOverride(token).pinyin.trim()
-																			)}
-																		</p>
-																	{/if}
 																</div>
 															{:else if showFullMatchList(token)}
 																<div class="mt-2 max-h-96 space-y-2 overflow-y-auto pr-1">
@@ -931,8 +1007,8 @@
 																					<p class="font-medium text-white">
 																						{match.simplified}
 																						{#if match.traditional !== match.simplified}
-																							<span class="text-zinc-300">
-																								· {match.traditional}</span
+																							<span class="text-zinc-300"
+																								>· {match.traditional}</span
 																							>
 																						{/if}
 																					</p>
@@ -948,27 +1024,6 @@
 																					{match.source}
 																				</p>
 																			</div>
-
-																			{#if typeof match.frequency === 'number' || (match.partsOfSpeech?.length ?? 0) > 0}
-																				<p class="mt-1 text-zinc-300">
-																					{#if typeof match.frequency === 'number'}freq {match.frequency}{/if}{#if typeof match.frequency === 'number' && (match.partsOfSpeech?.length ?? 0) > 0}
-																						·
-																					{/if}{#if (match.partsOfSpeech?.length ?? 0) > 0}POS {match.partsOfSpeech?.join(
-																							', '
-																						)}{/if}
-																				</p>
-																			{/if}
-																			{#if (match.tags?.length ?? 0) > 0 || (match.classifiers?.length ?? 0) > 0}
-																				<p class="mt-1 text-zinc-300">
-																					{#if (match.tags?.length ?? 0) > 0}{match.tags?.join(
-																							', '
-																						)}{/if}{#if (match.tags?.length ?? 0) > 0 && (match.classifiers?.length ?? 0) > 0}
-																						·
-																					{/if}{#if (match.classifiers?.length ?? 0) > 0}CL {match.classifiers?.join(
-																							', '
-																						)}{/if}
-																				</p>
-																			{/if}
 																			<ul class="mt-2 list-disc space-y-1 pl-4 text-zinc-200">
 																				{#each match.definitions as definition, definitionIndex (definitionIndex)}
 																					<li>{definition}</li>
@@ -977,69 +1032,126 @@
 																		</button>
 																	{/each}
 																</div>
-															{:else}
-																{@const selectedMatch = selectedMatchForToken(token)}
-																{#if selectedMatch}
-																	<div class="mt-2 space-y-3">
-																		<div
-																			class="rounded-xl bg-sky-500/15 p-2 ring-1 ring-sky-300/40"
+															{/if}
+
+															{#if wholeWordSelectionComplete(token)}
+																<div class="mt-3 space-y-3">
+																	<div class="rounded-xl bg-sky-500/15 p-2 ring-1 ring-sky-300/40">
+																		<p
+																			class="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-300"
 																		>
-																			<div class="flex items-start justify-between gap-2">
-																				<div>
-																					<p class="font-medium text-white">
-																						{selectedMatch.simplified}
-																						{#if selectedMatch.traditional !== selectedMatch.simplified}
-																							<span class="text-zinc-300">
-																								· {selectedMatch.traditional}</span
-																							>
-																						{/if}
-																					</p>
-																					{#if selectedMatch.pinyin}
-																						<p class="mt-0.5 text-zinc-300">
-																							{displayMatchPinyin(selectedMatch.pinyin)}
+																			{token.dictionaryMatches.length === 0
+																				? 'Word translation'
+																				: 'Selected word meaning'}
+																		</p>
+																		<p class="mt-1 text-sm text-white">
+																			{wholeWordSelectionLabel(token)}
+																		</p>
+																	</div>
+
+																	{#each selectedCharacterMeanings(token) as characterMeaning (characterMeaning.index)}
+																		{@const selectedCharacterMatch =
+																			selectedCharacterMatchForMeaning(token, characterMeaning)}
+																		{#if selectedCharacterMatch}
+																			<div class="rounded-xl bg-white/5 p-2 ring-1 ring-white/10">
+																				<div class="flex items-start justify-between gap-2">
+																					<div>
+																						<p class="font-medium text-white">
+																							{characterMeaning.text}
 																						</p>
-																					{/if}
+																						{#if selectedCharacterMatch.pinyin}
+																							<p class="mt-0.5 text-zinc-300">
+																								{displayMatchPinyin(selectedCharacterMatch.pinyin)}
+																							</p>
+																						{/if}
+																					</div>
+																					<button
+																						type="button"
+																						onclick={() =>
+																							restartTokenCharacterSelectionsFrom(
+																								token,
+																								characterMeaning.index
+																							)}
+																						class="rounded-lg bg-white/10 px-2 py-1 text-[11px] font-medium text-white ring-1 ring-white/10 transition hover:bg-white/20"
+																					>
+																						Change
+																					</button>
 																				</div>
-																				<p
-																					class="shrink-0 text-[10px] uppercase tracking-[0.14em] text-zinc-400"
-																				>
-																					{selectedMatch.source}
-																				</p>
+																				<ul class="mt-2 list-disc space-y-1 pl-4 text-zinc-200">
+																					{#each selectedCharacterMatch.definitions as definition, definitionIndex (definitionIndex)}
+																						<li>{definition}</li>
+																					{/each}
+																				</ul>
 																			</div>
-																			{#if typeof selectedMatch.frequency === 'number' || (selectedMatch.partsOfSpeech?.length ?? 0) > 0}
-																				<p class="mt-1 text-zinc-300">
-																					{#if typeof selectedMatch.frequency === 'number'}freq {selectedMatch.frequency}{/if}{#if typeof selectedMatch.frequency === 'number' && (selectedMatch.partsOfSpeech?.length ?? 0) > 0}
-																						·
-																					{/if}{#if (selectedMatch.partsOfSpeech?.length ?? 0) > 0}POS
-																						{selectedMatch.partsOfSpeech?.join(', ')}{/if}
+																		{/if}
+																	{/each}
+
+																	{#if nextCharacterMeaningToSelect(token)}
+																		{@const nextCharacterMeaning = nextCharacterMeaningToSelect(token)!}
+																		<div class="rounded-xl bg-white/5 p-2 ring-1 ring-white/10">
+																			<p
+																				class="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-400"
+																			>
+																				Choose meaning for {nextCharacterMeaning.text}
+																			</p>
+																			{#if nextCharacterMeaning.dictionaryMatches.length === 0}
+																				<p class="mt-2 text-zinc-300">
+																					No character dictionary entries found.
 																				</p>
+																			{:else}
+																				<div class="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
+																					{#each nextCharacterMeaning.dictionaryMatches as match (match.entryId)}
+																						<button
+																							type="button"
+																							onclick={() =>
+																								setTokenCharacterSelection(
+																									token,
+																									nextCharacterMeaning.index,
+																									match.entryId
+																								)}
+																							class="block w-full rounded-xl bg-white/5 p-2 text-left ring-1 ring-white/10 transition hover:bg-white/10"
+																						>
+																							<div class="flex items-start justify-between gap-2">
+																								<div>
+																									<p class="font-medium text-white">
+																										{match.simplified}
+																									</p>
+																									{#if match.pinyin}
+																										<p class="mt-0.5 text-zinc-300">
+																											{displayMatchPinyin(match.pinyin)}
+																										</p>
+																									{/if}
+																								</div>
+																								<p
+																									class="shrink-0 text-[10px] uppercase tracking-[0.14em] text-zinc-400"
+																								>
+																									{match.source}
+																								</p>
+																							</div>
+																							<ul
+																								class="mt-2 list-disc space-y-1 pl-4 text-zinc-200"
+																							>
+																								{#each match.definitions as definition, definitionIndex (definitionIndex)}
+																									<li>{definition}</li>
+																								{/each}
+																							</ul>
+																						</button>
+																					{/each}
+																				</div>
 																			{/if}
-																			{#if (selectedMatch.tags?.length ?? 0) > 0 || (selectedMatch.classifiers?.length ?? 0) > 0}
-																				<p class="mt-1 text-zinc-300">
-																					{#if (selectedMatch.tags?.length ?? 0) > 0}{selectedMatch.tags?.join(
-																							', '
-																						)}{/if}{#if (selectedMatch.tags?.length ?? 0) > 0 && (selectedMatch.classifiers?.length ?? 0) > 0}
-																						·
-																					{/if}{#if (selectedMatch.classifiers?.length ?? 0) > 0}CL {selectedMatch.classifiers?.join(
-																							', '
-																						)}{/if}
-																				</p>
-																			{/if}
-																			<ul class="mt-2 list-disc space-y-1 pl-4 text-zinc-200">
-																				{#each selectedMatch.definitions as definition, definitionIndex (definitionIndex)}
-																					<li>{definition}</li>
-																				{/each}
-																			</ul>
 																		</div>
+																	{/if}
+
+																	{#if token.dictionaryMatches.length > 0}
 																		<button
 																			type="button"
 																			onclick={() => changeTokenSelection(token.id)}
 																			class="rounded-xl bg-white/10 px-3 py-2 text-xs font-medium text-white ring-1 ring-white/15 transition hover:bg-white/20"
 																		>
-																			Change
+																			Change word meaning
 																		</button>
-																	</div>
-																{/if}
+																	{/if}
+																</div>
 															{/if}
 														</div>
 													</div>

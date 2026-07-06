@@ -16,6 +16,14 @@ export type DictionaryMatch = {
 	sourcePosition?: number;
 };
 
+export type StudyCharacterMeaning = {
+	index: number;
+	text: string;
+	lookupText: string;
+	dictionaryMatches: DictionaryMatch[];
+	selectedDictionaryEntryId?: string;
+};
+
 export type SentenceSegmentation = {
 	sentenceId: string;
 	source: 'auto' | 'manual' | 'mixed';
@@ -37,7 +45,9 @@ export type StudyToken = {
 	selectedTranslation?: string;
 	manualTranslation?: string;
 	manualPinyin?: string;
+	characterSelectionIds?: string[];
 	dictionaryMatches: DictionaryMatch[];
+	characterMeanings: StudyCharacterMeaning[];
 	tags: string[];
 };
 

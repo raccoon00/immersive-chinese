@@ -64,7 +64,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 
 		const tokenManualOverrides =
 			updates.tokenManualOverrides && typeof updates.tokenManualOverrides === 'object'
-				? (Object.entries(updates.tokenManualOverrides as Record<string, unknown>).reduce<
+				? Object.entries(updates.tokenManualOverrides as Record<string, unknown>).reduce<
 						Record<string, { translation?: string; pinyin?: string }>
 					>((accumulator, [tokenId, value]) => {
 						if (!value || typeof value !== 'object') {
@@ -81,7 +81,23 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 
 						accumulator[tokenId] = { translation, pinyin };
 						return accumulator;
-					}, {}))
+					}, {})
+				: undefined;
+
+		const tokenCharacterSelections =
+			updates.tokenCharacterSelections && typeof updates.tokenCharacterSelections === 'object'
+				? Object.entries(updates.tokenCharacterSelections as Record<string, unknown>).reduce<
+						Record<string, string[]>
+					>((accumulator, [tokenId, value]) => {
+						if (!Array.isArray(value)) {
+							return accumulator;
+						}
+
+						accumulator[tokenId] = value.filter(
+							(entryId): entryId is string => typeof entryId === 'string'
+						);
+						return accumulator;
+					}, {})
 				: undefined;
 
 		const studyText = await saveStudyText(studyTextId, {
@@ -102,7 +118,8 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 			sentenceTranslations,
 			sentenceSegmentations,
 			tokenSelections,
-			tokenManualOverrides
+			tokenManualOverrides,
+			tokenCharacterSelections
 		});
 
 		return json({ studyText });

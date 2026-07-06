@@ -5,6 +5,7 @@ import { mapWholeTranslationToStudyText } from '$lib/study-text/parseTranslation
 import { autoSegmentSentence, manualSegmentSentence } from '$lib/study-text/segmentSentence';
 import type {
 	RawStudyTextInput,
+	StudyCharacterMeaning,
 	StudyText,
 	StudyTextSummary,
 	StudyToken,
@@ -31,6 +32,7 @@ type SaveStudyTextUpdates = Partial<
 			pinyin?: string;
 		}
 	>;
+	tokenCharacterSelections?: Record<string, string[]>;
 };
 
 function getStudyTextPath(studyTextId: string): string {
@@ -99,28 +101,82 @@ function createStoredStudyText(studyTextId: string, input: RawStudyTextInput): S
 	};
 }
 
+const digitToHanziMap: Record<string, string> = {
+	'0': '零',
+	'1': '一',
+	'2': '二',
+	'3': '三',
+	'4': '四',
+	'5': '五',
+	'6': '六',
+	'7': '七',
+	'8': '八',
+	'9': '九'
+};
+
+function lookupTextForCharacter(character: string): string {
+	return digitToHanziMap[character] ?? character;
+}
+
+async function buildCharacterMeanings(token: StudyToken): Promise<StudyCharacterMeaning[]> {
+	return Promise.all(
+		[...token.text].map(async (character, index) => {
+			const lookupText = lookupTextForCharacter(character);
+			return {
+				index,
+				text: character,
+				lookupText,
+				dictionaryMatches: await lookupDictionaryMatches(lookupText),
+				selectedDictionaryEntryId: token.characterSelectionIds?.[index]
+			};
+		})
+	);
+}
+
 async function enrichToken(token: StudyToken): Promise<StudyToken> {
 	if (token.kind !== 'word') {
 		return {
 			...token,
 			dictionaryMatches: [],
+			characterMeanings: [],
 			pinyin: undefined,
 			tags: []
 		};
 	}
 
-	const dictionaryMatches = await lookupDictionaryMatches(token.text);
+	const [dictionaryMatches, characterMeanings] = await Promise.all([
+		lookupDictionaryMatches(token.text),
+		buildCharacterMeanings(token)
+	]);
 	const selectedDictionaryMatch = token.selectedDictionaryEntryId
 		? dictionaryMatches.find((match) => match.entryId === token.selectedDictionaryEntryId)
 		: undefined;
+	const selectedCharacterPinyin = characterMeanings
+		.map((characterMeaning) => {
+			const selectedCharacterMatch = characterMeaning.selectedDictionaryEntryId
+				? characterMeaning.dictionaryMatches.find(
+						(match) => match.entryId === characterMeaning.selectedDictionaryEntryId
+					)
+				: undefined;
+			return (
+				selectedCharacterMatch?.pinyin?.trim() ||
+				characterMeaning.dictionaryMatches[0]?.pinyin?.trim() ||
+				''
+			);
+		})
+		.filter((part) => part.length > 0)
+		.join(' ');
 	const fallbackPinyin =
-		dictionaryMatches.length === 0 ? await lookupCharacterFallbackPinyin(token.text) : undefined;
+		dictionaryMatches.length === 0 && selectedCharacterPinyin.length === 0
+			? await lookupCharacterFallbackPinyin(token.text)
+			: undefined;
 
 	return {
 		...token,
 		dictionaryMatches,
+		characterMeanings,
 		pinyin:
-			token.manualPinyin?.trim() ||
+			selectedCharacterPinyin ||
 			selectedDictionaryMatch?.pinyin?.trim() ||
 			dictionaryMatches[0]?.pinyin?.trim() ||
 			token.pinyin ||
@@ -208,6 +264,36 @@ function applyTokenSelections(
 								...token,
 								selectedDictionaryEntryId,
 								selectedTranslation: selectedDictionaryMatch?.definitions.join('; ')
+							}
+						: token;
+				})
+			}
+		}))
+	};
+}
+
+function applyTokenCharacterSelections(
+	studyText: StudyText,
+	tokenCharacterSelections: SaveStudyTextUpdates['tokenCharacterSelections']
+): StudyText {
+	if (!tokenCharacterSelections) {
+		return studyText;
+	}
+
+	return {
+		...studyText,
+		sentences: studyText.sentences.map((sentence) => ({
+			...sentence,
+			segmentation: {
+				...sentence.segmentation,
+				tokens: sentence.segmentation.tokens.map((token) => {
+					const characterSelectionIds = tokenCharacterSelections[token.id];
+					return Array.isArray(characterSelectionIds)
+						? {
+								...token,
+								characterSelectionIds: characterSelectionIds.filter(
+									(entryId) => typeof entryId === 'string' && entryId.length > 0
+								)
 							}
 						: token;
 				})
@@ -398,6 +484,7 @@ export async function saveStudyText(
 
 	nextStudyText = applySentenceSegmentations(nextStudyText, updates.sentenceSegmentations);
 	nextStudyText = applyTokenSelections(nextStudyText, updates.tokenSelections);
+	nextStudyText = applyTokenCharacterSelections(nextStudyText, updates.tokenCharacterSelections);
 	nextStudyText = applyTokenManualOverrides(nextStudyText, updates.tokenManualOverrides);
 	nextStudyText = applySentenceTranslations(nextStudyText, updates.sentenceTranslations);
 
